@@ -212,25 +212,13 @@ append_packaging_step(const AmigaTarget *target,
                       GPtrArray         *steps)
 {
   if (!staging_root || !target) return;
-  if (target->kind == AMIGA_TARGET_OS_EXE) {
-    if (target->format == AMIGA_ARTIFACT_RAW_BIN ||
-        (target->boot_adf && target->boot_adf[0])) {
-      return;
-    }
+  if (target->kind == AMIGA_TARGET_EXE_DH0) {
     AmigaBuildStep *ps = step_new(AMIGA_STEP_STAGE_DH0, "Stage DH0:", root);
     ps->out_artifact = g_build_filename(staging_root, "dh0", NULL);
     g_ptr_array_add(steps, ps);
-  } else if (target->kind == AMIGA_TARGET_ADF_DOS) {
-    AmigaBuildStep *ps = step_new(AMIGA_STEP_PACK_ADF_DOS, "Pack ADF (ADFlib)", root);
-    ps->out_artifact = (target->boot_adf && target->boot_adf[0])
-                           ? g_build_filename(root, target->boot_adf, NULL)
-                           : g_strdup_printf("%s/out/%s.adf", root, target->name);
-    g_ptr_array_add(steps, ps);
-  } else {
-    AmigaBuildStep *ps = step_new(AMIGA_STEP_PACK_ADF_RAW, "Pack Raw ADF", root);
-    ps->out_artifact = (target->boot_adf && target->boot_adf[0])
-                           ? g_build_filename(root, target->boot_adf, NULL)
-                           : g_strdup_printf("%s/out/%s.adf", root, target->name);
+  } else if (target->kind == AMIGA_TARGET_EXE_ADF) {
+    AmigaBuildStep *ps = step_new(AMIGA_STEP_PACK_ADF_DOS, "Pack Bootable ADF (ADFlib)", root);
+    ps->out_artifact = g_strdup_printf("%s/out/%s.adf", root, target->name);
     g_ptr_array_add(steps, ps);
   }
 }
@@ -254,7 +242,7 @@ amiga_build_plan_steps(const AmigaProject         *proj,
   g_autofree char *elf_rel = resolve_target_elf_rel(target);
   g_autofree char *exe_rel = resolve_target_exe_rel(target);
   g_autofree char *bin_rel = resolve_target_bin_rel(target);
-  const char *primary_art = (target->format == AMIGA_ARTIFACT_RAW_BIN) ? bin_rel : exe_rel;
+  const char *primary_art = (target->kind == AMIGA_TARGET_FLAT_BIN) ? bin_rel : exe_rel;
 
   if (proj->pre_build_cmd && proj->pre_build_cmd[0]) {
     g_autofree char *pre = expand_cmd_tokens(proj->pre_build_cmd, target->name, NULL, primary_art);
@@ -262,7 +250,7 @@ amiga_build_plan_steps(const AmigaProject         *proj,
   }
 
   if (proj->build_mode == AMIGA_BUILD_EXTERNAL) {
-    const char *raw_cmd = (proj->build_cmd && proj->build_cmd[0]) ? proj->build_cmd : "make -j4";
+    const char *raw_cmd = (proj->build_cmd && proj->build_cmd[0]) ? proj->build_cmd : "make";
     g_autofree char *cmd = expand_cmd_tokens(raw_cmd, target->name, NULL, primary_art);
     g_autofree char *ext_out = g_build_filename(root, primary_art, NULL);
     append_shell_step(steps, "External build", root, cmd, ext_out);
@@ -273,31 +261,6 @@ amiga_build_plan_steps(const AmigaProject         *proj,
     }
     *out_steps = steps;
     return true;
-  }
-
-  /* Asset pre-build steps (mtime cached) */
-  for (guint i = 0; proj->assets && i < proj->assets->len; i++) {
-    const AmigaAsset *a = g_ptr_array_index(proj->assets, i);
-    if (!a->cmd || !a->cmd[0]) continue;
-
-    g_autoptr(GPtrArray) abs_in = g_ptr_array_new_with_free_func(g_free);
-    for (guint ii = 0; a->inputs && ii < a->inputs->len; ii++) {
-      g_ptr_array_add(abs_in, g_build_filename(root, g_ptr_array_index(a->inputs, ii), NULL));
-    }
-    bool dirty = (a->outputs == NULL || a->outputs->len == 0);
-    for (guint oi = 0; !dirty && oi < a->outputs->len; oi++) {
-      g_autofree char *out_f = g_build_filename(root, g_ptr_array_index(a->outputs, oi), NULL);
-      if (amiga_build_needs_rebuild(out_f, (const char *const *)abs_in->pdata, abs_in->len)) {
-        dirty = true;
-      }
-    }
-
-    AmigaBuildStep *as = step_new(AMIGA_STEP_SHELL_CMD, a->name ? a->name : "asset", root);
-    as->skipped_up_to_date = !dirty;
-    g_ptr_array_add(as->argv, g_strdup("/bin/sh"));
-    g_ptr_array_add(as->argv, g_strdup("-c"));
-    g_ptr_array_add(as->argv, g_strdup(a->cmd));
-    g_ptr_array_add(steps, as);
   }
 
   /* Collect shared + target sources (shared harness/support linked first) */
@@ -383,19 +346,10 @@ amiga_build_plan_steps(const AmigaProject         *proj,
       g_ptr_array_add(cs->argv, g_strdup(dep_rel));
     }
 
-    if (target->includes && target->includes->len > 0) {
-      for (guint ii = 0; ii < target->includes->len; ii++) {
-        const char *inc = g_ptr_array_index(target->includes, ii);
-        if (g_strcmp0(inc, "$SDKDIR") == 0) {
-          if (tc && tc->sdk_include_dir) {
-            g_ptr_array_add(cs->argv, g_strdup_printf("-I%s", tc->sdk_include_dir));
-          }
-          continue;
-        }
-        g_ptr_array_add(cs->argv, g_strdup_printf("-I%s", inc));
-      }
-    } else {
-      g_ptr_array_add(cs->argv, g_strdup("-I."));
+    g_autoptr(GPtrArray) incs = g_ptr_array_new_with_free_func(g_free);
+    amiga_project_collect_target_includes(proj, target, tc, !is_c_source(src), false, incs);
+    for (guint ii = 0; ii < incs->len; ii++) {
+      g_ptr_array_add(cs->argv, g_strdup_printf("-I%s", (const char *)g_ptr_array_index(incs, ii)));
     }
     for (guint di = 0; target->defines && di < target->defines->len; di++) {
       g_ptr_array_add(cs->argv, g_strdup_printf("-D%s", (const char *)g_ptr_array_index(target->defines, di)));
@@ -458,12 +412,6 @@ amiga_build_plan_steps(const AmigaProject         *proj,
       g_ptr_array_add(vl->argv, g_strdup(g_ptr_array_index(objs, oi)));
     }
     g_ptr_array_add(steps, vl);
-  }
-
-  if (target->pack_cmd && target->pack_cmd[0]) {
-    g_autofree char *pak_rel = g_strdup_printf("out/%s.pak", target->name);
-    g_autofree char *pcmd = expand_cmd_tokens(target->pack_cmd, target->name, primary_art, pak_rel);
-    append_shell_step(steps, "Pack artifact", root, pcmd, pak_rel);
   }
 
   /* Final Packaging Step (DH0: dir or in-process ADFlib .adf) */
@@ -542,7 +490,7 @@ amiga_build_parse_diagnostic(const char *line, AmigaBuildDiag *out_diag)
 }
 
 bool
-amiga_build_stage_dh0(const AmigaProject *proj,
+amiga_build_stage_dh0(const AmigaProject *proj G_GNUC_UNUSED,
                       const AmigaTarget  *target,
                       const char         *exe_path,
                       const char         *dh0_dir,
@@ -564,18 +512,6 @@ amiga_build_stage_dh0(const AmigaProject *proj,
   }
   if (!g_file_set_contents(dst_exe, exe_bytes, (gssize)exe_len, error)) {
     return false;
-  }
-
-  const char *root = (proj && proj->root_dir) ? proj->root_dir : ".";
-  for (guint i = 0; target->extra_files && i < target->extra_files->len; i++) {
-    const char *rel = g_ptr_array_index(target->extra_files, i);
-    g_autofree char *src = g_build_filename(root, rel, NULL);
-    g_autofree char *base = g_path_get_basename(rel);
-    g_autofree char *dst = g_build_filename(dh0_dir, base, NULL);
-    g_autofree char *buf = NULL;
-    gsize len = 0;
-    if (!g_file_get_contents(src, &buf, &len, error)) return false;
-    if (!g_file_set_contents(dst, buf, (gssize)len, error)) return false;
   }
 
   g_autofree char *startup = target->startup_sequence
@@ -730,17 +666,6 @@ run_next_step(GTask *task)
       AmigaAdfFileEntry e_exe = { .guest_path = guest_exe, .host_path = exe };
       g_array_append_val(entries, e_exe);
 
-      g_autoptr(GPtrArray) tmp_strs = g_ptr_array_new_with_free_func(g_free);
-      for (guint ei = 0; ctx->target->extra_files && ei < ctx->target->extra_files->len; ei++) {
-        const char *rel = g_ptr_array_index(ctx->target->extra_files, ei);
-        gchar *abs = g_path_is_absolute(rel) ? g_strdup(rel) : g_build_filename(root, rel, NULL);
-        gchar *base = g_path_get_basename(rel);
-        g_ptr_array_add(tmp_strs, abs);
-        g_ptr_array_add(tmp_strs, base);
-        AmigaAdfFileEntry e_ext = { .guest_path = base, .host_path = abs };
-        g_array_append_val(entries, e_ext);
-      }
-
       AmigaAdfDosSpec spec = {
         .adf_path = step->out_artifact,
         .volume_name = ctx->target->name,
@@ -754,30 +679,6 @@ run_next_step(GTask *task)
       g_array_unref(entries);
       if (!ok_adf) {
         g_string_append_printf(ctx->log, "ADFlib pack failed: %s\n", err->message);
-        finish_build_task(task, false, NULL);
-        return;
-      }
-      g_free(ctx->artifact_path);
-      ctx->artifact_path = g_strdup(step->out_artifact);
-      ctx->cur_step++;
-      continue;
-    }
-
-    if (step->kind == AMIGA_STEP_PACK_ADF_RAW) {
-      const char *root = ctx->proj->root_dir ? ctx->proj->root_dir : ".";
-      g_autofree char *bin_rel = (ctx->target->format == AMIGA_ARTIFACT_RAW_BIN)
-                                     ? resolve_target_bin_rel(ctx->target)
-                                     : resolve_target_exe_rel(ctx->target);
-      g_autofree char *payload_path = g_path_is_absolute(bin_rel)
-                                          ? g_strdup(bin_rel)
-                                          : g_build_filename(root, bin_rel, NULL);
-      g_autofree char *payload = NULL;
-      gsize payload_len = 0;
-      g_autoptr(GError) err = NULL;
-      if (!g_file_get_contents(payload_path, &payload, &payload_len, &err) ||
-          !amiga_adf_create_raw(step->out_artifact, NULL, 0,
-                                (const uint8_t *)payload, payload_len, &err)) {
-        g_string_append_printf(ctx->log, "Raw ADF pack failed: %s\n", err ? err->message : "error");
         finish_build_task(task, false, NULL);
         return;
       }
@@ -867,25 +768,21 @@ dup_target_minimal(const AmigaTarget *src)
 {
   AmigaTarget *t = amiga_target_new(src->name);
   t->kind = src->kind;
-  t->format = src->format;
   t->toolchain = src->toolchain;
   g_free(t->cpu); t->cpu = g_strdup(src->cpu);
   for (guint i = 0; src->sources && i < src->sources->len; i++) g_ptr_array_add(t->sources, g_strdup(g_ptr_array_index(src->sources, i)));
   for (guint i = 0; src->includes && i < src->includes->len; i++) g_ptr_array_add(t->includes, g_strdup(g_ptr_array_index(src->includes, i)));
+  for (guint i = 0; src->c_includes && i < src->c_includes->len; i++) g_ptr_array_add(t->c_includes, g_strdup(g_ptr_array_index(src->c_includes, i)));
+  for (guint i = 0; src->asm_includes && i < src->asm_includes->len; i++) g_ptr_array_add(t->asm_includes, g_strdup(g_ptr_array_index(src->asm_includes, i)));
   for (guint i = 0; src->defines && i < src->defines->len; i++) g_ptr_array_add(t->defines, g_strdup(g_ptr_array_index(src->defines, i)));
-  for (guint i = 0; src->extra_files && i < src->extra_files->len; i++) g_ptr_array_add(t->extra_files, g_strdup(g_ptr_array_index(src->extra_files, i)));
-  for (guint i = 0; src->symbol_files && i < src->symbol_files->len; i++) g_ptr_array_add(t->symbol_files, g_strdup(g_ptr_array_index(src->symbol_files, i)));
   t->startup_sequence = g_strdup(src->startup_sequence);
   t->copper_symbol = g_strdup(src->copper_symbol);
   t->bitplane_symbol = g_strdup(src->bitplane_symbol);
   t->entry_symbol = g_strdup(src->entry_symbol);
   t->load_addr = src->load_addr;
-  t->entry_addr = src->entry_addr;
   t->exe_path = g_strdup(src->exe_path);
   t->elf_path = g_strdup(src->elf_path);
   t->bin_path = g_strdup(src->bin_path);
-  t->boot_adf = g_strdup(src->boot_adf);
-  t->pack_cmd = g_strdup(src->pack_cmd);
   return t;
 }
 

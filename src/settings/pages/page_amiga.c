@@ -28,6 +28,8 @@ typedef struct _SettingsPageAmiga {
     /* Card 2: Toolchain, adflib & HRM Docs */
     GtkWidget *seg_toolchain;
     GtkWidget *entry_extra_paths;
+    GtkWidget *entry_c_inc_dirs;
+    GtkWidget *entry_asm_inc_dirs;
     GtkWidget *entry_hrm_dir;
     GtkWidget *probe_badges[7];
 
@@ -92,6 +94,10 @@ read_ui_into_cfg(SettingsPageAmiga *self, KajoAmigaCfg *out)
     out->default_toolchain = (KajoAmigaToolchain)MIN(segmented_group_get_selected(self->seg_toolchain), 2u);
     g_free(out->extra_bin_paths);
     out->extra_bin_paths = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_extra_paths)));
+    g_free(out->c_include_dirs);
+    out->c_include_dirs = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_c_inc_dirs)));
+    g_free(out->asm_include_dirs);
+    out->asm_include_dirs = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_asm_inc_dirs)));
     g_free(out->hrm_dir);
     out->hrm_dir = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_hrm_dir)));
 
@@ -194,6 +200,8 @@ apply_cfg_to_ui(SettingsPageAmiga *self, const KajoAmigaCfg *cfg)
 
     segmented_group_set_selected(self->seg_toolchain, (guint)cfg->default_toolchain);
     gtk_editable_set_text(GTK_EDITABLE(self->entry_extra_paths), cfg->extra_bin_paths ? cfg->extra_bin_paths : "");
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_c_inc_dirs), cfg->c_include_dirs ? cfg->c_include_dirs : "");
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_asm_inc_dirs), cfg->asm_include_dirs ? cfg->asm_include_dirs : "");
     gtk_editable_set_text(GTK_EDITABLE(self->entry_hrm_dir), cfg->hrm_dir ? cfg->hrm_dir : "");
 
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->card_inherit_ide), cfg->inherit_ide_editor_prefs);
@@ -485,6 +493,14 @@ settings_page_amiga_init(SettingsPageAmiga *self)
     gtk_box_append(GTK_BOX(c_tc), make_path_row(
         self, "📂", "Extra Cross-Toolchain Bin Paths", "Colon-separated directories prepended to PATH probes",
         "/opt/amiga/bin", &self->entry_extra_paths, NULL, self));
+
+    gtk_box_append(GTK_BOX(c_tc), make_path_row(
+        self, "📘", "C System Includes (.h)", "Colon-separated NDK / SDK header dirs for GCC/VBCC & clangd",
+        "/opt/amiga/m68k-amiga-elf/sys-include", &self->entry_c_inc_dirs, NULL, self));
+
+    gtk_box_append(GTK_BOX(c_tc), make_path_row(
+        self, "📘", "ASM System Includes (.i)", "Colon-separated NDK / SDK .i include dirs for vasmm68k & m68k-lsp",
+        "/opt/amiga/ndk/Include_i", &self->entry_asm_inc_dirs, NULL, self));
 
     gtk_box_append(GTK_BOX(c_tc), make_path_row(
         self, "📘", "Local HRM Markdown Directory", "Chapter files loaded on K lookup ([docs].hrm_dir)",

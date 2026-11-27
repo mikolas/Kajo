@@ -10,10 +10,12 @@ struct _AmigaMemView {
 
   GtkWidget          *entry_addr;
   GtkWidget          *entry_patch;
+  GtkWidget          *entry_find;
   GtkWidget          *btn_8b;
   GtkWidget          *btn_16b;
   GtkWidget          *btn_32b;
   GtkWidget          *toggle_follow;
+  GtkWidget          *btn_presets[4]; /* COP1LC, BPL1PT, PC, A7 */
   GtkWidget          *text_view;
 
   int                 group_bytes; /* 1, 2, or 4 */
@@ -21,6 +23,8 @@ struct _AmigaMemView {
   GByteArray         *cur_bytes;
   GByteArray         *prev_bytes;
   uint32_t            prev_addr;
+  ssize_t             find_hit_off;
+  size_t              find_hit_len;
 
   AmigaCpuRegs        regs;
   bool                has_regs;
@@ -30,6 +34,8 @@ struct _AmigaMemView {
   AmigaMemReadCb      read_cb;
   AmigaMemWriteCb     write_cb;
   AmigaMemWatchCb     watch_cb;
+  AmigaMemDmaWatchCb  dma_watch_cb;
+  gpointer            dma_ud;
   gpointer            user_data;
 };
 
@@ -93,7 +99,7 @@ render_hex_buffer(AmigaMemView *self)
 {
   GtkTextBuffer *tb = gtk_text_view_get_buffer(GTK_TEXT_VIEW(self->text_view));
   if (!self->cur_bytes || self->cur_bytes->len == 0) {
-    gtk_text_buffer_set_text(tb, "No memory loaded (click READ or stop on breakpoint).", -1);
+    gtk_text_buffer_set_text(tb, "No memory loaded (click ↻ READ or pause target).", -1);
     return;
   }
   GtkTextTagTable *tt = gtk_text_buffer_get_tag_table(tb);
@@ -101,6 +107,13 @@ render_hex_buffer(AmigaMemView *self)
   if (!diff_tag) {
     diff_tag = gtk_text_buffer_create_tag(tb, "changed",
                                           "foreground", "#ff8c00",
+                                          "weight", PANGO_WEIGHT_BOLD, NULL);
+  }
+  GtkTextTag *find_tag = gtk_text_tag_table_lookup(tt, "findhit");
+  if (!find_tag) {
+    find_tag = gtk_text_buffer_create_tag(tb, "findhit",
+                                          "background", "#0078d4",
+                                          "foreground", "#ffffff",
                                           "weight", PANGO_WEIGHT_BOLD, NULL);
   }
   gtk_text_buffer_set_text(tb, "", 0);
@@ -119,11 +132,17 @@ render_hex_buffer(AmigaMemView *self)
 
     for (size_t col = 0; col < 16; col++) {
       if (off + col < len) {
-        uint8_t b = buf[off + col];
-        bool changed = same_base && (b != self->prev_bytes->data[off + col]);
+        size_t abs_off = off + col;
+        uint8_t b = buf[abs_off];
+        bool is_hit = (self->find_hit_off >= 0 &&
+                       abs_off >= (size_t)self->find_hit_off &&
+                       abs_off < (size_t)self->find_hit_off + self->find_hit_len);
+        bool changed = same_base && (b != self->prev_bytes->data[abs_off]);
         char h[4];
         g_snprintf(h, sizeof(h), "%02X", b);
-        if (changed) {
+        if (is_hit) {
+          gtk_text_buffer_insert_with_tags(tb, &end, h, -1, find_tag, NULL);
+        } else if (changed) {
           gtk_text_buffer_insert_with_tags(tb, &end, h, -1, diff_tag, NULL);
         } else {
           gtk_text_buffer_insert(tb, &end, h, -1);
@@ -167,6 +186,17 @@ on_read_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud)
 }
 
 static void
+on_preset_clicked(GtkButton *b, gpointer ud)
+{
+  AmigaMemView *self = AMIGA_MEM_VIEW(ud);
+  const char *expr = g_object_get_data(G_OBJECT(b), "preset-expr");
+  uint32_t addr = 0;
+  if (resolve_mem_expr(self, expr, &addr)) {
+    amiga_mem_view_jump_to(self, addr);
+  }
+}
+
+static void
 on_group_toggled(GtkToggleButton *tb, gpointer ud)
 {
   AmigaMemView *self = AMIGA_MEM_VIEW(ud);
@@ -192,11 +222,59 @@ on_patch_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud)
 }
 
 static void
-on_watch_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud)
+on_find_clicked(GtkWidget *w G_GNUC_UNUSED, gpointer ud)
 {
   AmigaMemView *self = AMIGA_MEM_VIEW(ud);
+  const char *q = gtk_editable_get_text(GTK_EDITABLE(self->entry_find));
+  if (!q || !q[0] || !self->cur_bytes || self->cur_bytes->len == 0) {
+    self->find_hit_off = -1;
+    render_hex_buffer(self);
+    return;
+  }
+
+  g_autofree uint8_t *needle = NULL;
+  size_t nlen = 0;
+  if (!amiga_rsp_hex_decode(q, &needle, &nlen) || nlen == 0) {
+    g_free(needle);
+    nlen = strlen(q);
+    needle = (uint8_t *)g_strdup(q);
+  }
+
+  size_t start = (self->find_hit_off >= 0) ? (size_t)self->find_hit_off + 1u : 0u;
+  if (start >= self->cur_bytes->len) start = 0u;
+  self->find_hit_off = -1;
+  self->find_hit_len = 0;
+
+  for (size_t pass = 0; pass < 2 && self->find_hit_off < 0; pass++) {
+    size_t from = (pass == 0) ? start : 0u;
+    size_t to = (pass == 0) ? self->cur_bytes->len : start;
+    for (size_t i = from; i + nlen <= to; i++) {
+      if (memcmp(self->cur_bytes->data + i, needle, nlen) == 0) {
+        self->find_hit_off = (ssize_t)i;
+        self->find_hit_len = nlen;
+        break;
+      }
+    }
+  }
+  render_hex_buffer(self);
+}
+
+static void
+on_watch_clicked(GtkButton *b, gpointer ud)
+{
+  AmigaMemView *self = AMIGA_MEM_VIEW(ud);
+  uint8_t zt = (uint8_t)GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(b), "z-type"));
   if (self->watch_cb) {
-    self->watch_cb(self, 2, self->base_addr, 4, self->user_data);
+    self->watch_cb(self, zt, self->base_addr, 2, self->user_data);
+  }
+}
+
+static void
+on_dma_watch_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud)
+{
+  AmigaMemView *self = AMIGA_MEM_VIEW(ud);
+  if (self->dma_watch_cb) {
+    self->dma_watch_cb(self, self->base_addr, 2, self->dma_ud);
   }
 }
 
@@ -230,28 +308,49 @@ on_dump_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud)
                        NULL, on_dump_save_done, copy);
 }
 
+static GtkWidget *
+make_watch_btn(const char *label, uint8_t zt, AmigaMemView *self)
+{
+  GtkWidget *b = gtk_button_new_with_label(label);
+  gtk_widget_add_css_class(b, "ide-toolbar-btn");
+  g_object_set_data(G_OBJECT(b), "z-type", GUINT_TO_POINTER(zt));
+  g_signal_connect(b, "clicked", G_CALLBACK(on_watch_clicked), self);
+  return b;
+}
+
 static void
 amiga_mem_view_init(AmigaMemView *self)
 {
   gtk_orientable_set_orientation(GTK_ORIENTABLE(self), GTK_ORIENTATION_VERTICAL);
   self->group_bytes = 2;
+  self->find_hit_off = -1;
   self->cur_bytes = g_byte_array_new();
   self->prev_bytes = g_byte_array_new();
 
-  GtkWidget *tb = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-  gtk_widget_add_css_class(tb, "amiga-disasm-toolbar");
-  gtk_widget_set_valign(tb, GTK_ALIGN_CENTER);
+  GtkWidget *tb1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_add_css_class(tb1, "amiga-disasm-toolbar");
+  gtk_widget_set_valign(tb1, GTK_ALIGN_CENTER);
 
   self->entry_addr = gtk_entry_new();
   gtk_widget_add_css_class(self->entry_addr, "amiga-entry");
-  gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_addr), "$00020000 / COP1LC / BPL1PT / PC");
+  gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_addr), "$00020000 / COP1LC / PC");
   gtk_editable_set_text(GTK_EDITABLE(self->entry_addr), "$00DFF000");
+  gtk_editable_set_width_chars(GTK_EDITABLE(self->entry_addr), 12);
   gtk_widget_set_hexpand(self->entry_addr, TRUE);
   g_signal_connect(self->entry_addr, "activate", G_CALLBACK(on_addr_activate), self);
 
   GtkWidget *btn_read = gtk_button_new_with_label("↻ READ");
   gtk_widget_add_css_class(btn_read, "ide-toolbar-btn");
   g_signal_connect(btn_read, "clicked", G_CALLBACK(on_read_clicked), self);
+
+  static const char *const k_presets[4] = { "COP1LC", "BPL1PT", "PC", "A7" };
+  for (int i = 0; i < 4; i++) {
+    self->btn_presets[i] = gtk_button_new_with_label(k_presets[i]);
+    gtk_widget_add_css_class(self->btn_presets[i], "amiga-mini-btn");
+    g_object_set_data(G_OBJECT(self->btn_presets[i]), "preset-expr", (gpointer)k_presets[i]);
+    g_signal_connect(self->btn_presets[i], "clicked", G_CALLBACK(on_preset_clicked), self);
+    gtk_widget_set_sensitive(self->btn_presets[i], FALSE);
+  }
 
   self->btn_8b = gtk_toggle_button_new_with_label("8b");
   self->btn_16b = gtk_toggle_button_new_with_label("16b");
@@ -272,34 +371,51 @@ amiga_mem_view_init(AmigaMemView *self)
   self->toggle_follow = gtk_toggle_button_new_with_label("📌 FOLLOW");
   gtk_widget_add_css_class(self->toggle_follow, "amiga-seg-btn");
 
+  self->entry_find = gtk_entry_new();
+  gtk_widget_add_css_class(self->entry_find, "amiga-entry");
+  gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_find), "Find hex/ASCII");
+  gtk_editable_set_width_chars(GTK_EDITABLE(self->entry_find), 11);
+  g_signal_connect(self->entry_find, "activate", G_CALLBACK(on_find_clicked), self);
+  GtkWidget *btn_find = gtk_button_new_with_label("FIND");
+  gtk_widget_add_css_class(btn_find, "ide-toolbar-btn");
+  g_signal_connect(btn_find, "clicked", G_CALLBACK(on_find_clicked), self);
+
   self->entry_patch = gtk_entry_new();
   gtk_widget_add_css_class(self->entry_patch, "amiga-entry");
   gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_patch), "Hex patch");
-  gtk_widget_set_size_request(self->entry_patch, 96, -1);
-
+  gtk_editable_set_width_chars(GTK_EDITABLE(self->entry_patch), 8);
   GtkWidget *btn_patch = gtk_button_new_with_label("WRITE");
   gtk_widget_add_css_class(btn_patch, "ide-toolbar-btn");
   g_signal_connect(btn_patch, "clicked", G_CALLBACK(on_patch_clicked), self);
 
-  GtkWidget *btn_watch = gtk_button_new_with_label("👁 Z2 WATCH");
-  gtk_widget_add_css_class(btn_watch, "ide-toolbar-btn");
-  g_signal_connect(btn_watch, "clicked", G_CALLBACK(on_watch_clicked), self);
+  GtkWidget *btn_w = make_watch_btn("W", 2, self);
+  GtkWidget *btn_r = make_watch_btn("R", 3, self);
+  GtkWidget *btn_rw = make_watch_btn("RW", 4, self);
+  GtkWidget *btn_dma = gtk_button_new_with_label("+DMA");
+  gtk_widget_add_css_class(btn_dma, "ide-toolbar-btn");
+  g_signal_connect(btn_dma, "clicked", G_CALLBACK(on_dma_watch_clicked), self);
 
-  GtkWidget *btn_dump = gtk_button_new_with_label("💾 .BIN");
+  GtkWidget *btn_dump = gtk_button_new_with_label("💾.BIN");
   gtk_widget_add_css_class(btn_dump, "ide-toolbar-btn");
   g_signal_connect(btn_dump, "clicked", G_CALLBACK(on_dump_clicked), self);
 
-  gtk_box_append(GTK_BOX(tb), self->entry_addr);
-  gtk_box_append(GTK_BOX(tb), btn_read);
-  gtk_box_append(GTK_BOX(tb), self->btn_8b);
-  gtk_box_append(GTK_BOX(tb), self->btn_16b);
-  gtk_box_append(GTK_BOX(tb), self->btn_32b);
-  gtk_box_append(GTK_BOX(tb), self->toggle_follow);
-  gtk_box_append(GTK_BOX(tb), self->entry_patch);
-  gtk_box_append(GTK_BOX(tb), btn_patch);
-  gtk_box_append(GTK_BOX(tb), btn_watch);
-  gtk_box_append(GTK_BOX(tb), btn_dump);
-  gtk_box_append(GTK_BOX(self), tb);
+  gtk_box_append(GTK_BOX(tb1), self->entry_addr);
+  gtk_box_append(GTK_BOX(tb1), btn_read);
+  for (int i = 0; i < 4; i++) gtk_box_append(GTK_BOX(tb1), self->btn_presets[i]);
+  gtk_box_append(GTK_BOX(tb1), self->btn_8b);
+  gtk_box_append(GTK_BOX(tb1), self->btn_16b);
+  gtk_box_append(GTK_BOX(tb1), self->btn_32b);
+  gtk_box_append(GTK_BOX(tb1), self->toggle_follow);
+  gtk_box_append(GTK_BOX(tb1), self->entry_find);
+  gtk_box_append(GTK_BOX(tb1), btn_find);
+  gtk_box_append(GTK_BOX(tb1), self->entry_patch);
+  gtk_box_append(GTK_BOX(tb1), btn_patch);
+  gtk_box_append(GTK_BOX(tb1), btn_w);
+  gtk_box_append(GTK_BOX(tb1), btn_r);
+  gtk_box_append(GTK_BOX(tb1), btn_rw);
+  gtk_box_append(GTK_BOX(tb1), btn_dma);
+  gtk_box_append(GTK_BOX(tb1), btn_dump);
+  gtk_box_append(GTK_BOX(self), tb1);
 
   GtkWidget *scroll = gtk_scrolled_window_new();
   gtk_widget_set_hexpand(scroll, TRUE);
@@ -334,6 +450,16 @@ amiga_mem_view_set_callbacks(AmigaMemView    *self,
 }
 
 void
+amiga_mem_view_set_dma_watch_callback(AmigaMemView       *self,
+                                      AmigaMemDmaWatchCb  dma_cb,
+                                      gpointer            user_data)
+{
+  g_return_if_fail(AMIGA_IS_MEM_VIEW(self));
+  self->dma_watch_cb = dma_cb;
+  self->dma_ud = user_data;
+}
+
+void
 amiga_mem_view_set_regs_and_custom(AmigaMemView              *self,
                                    const AmigaCpuRegs        *regs,
                                    const AmigaCustomSnapshot *custom)
@@ -341,6 +467,10 @@ amiga_mem_view_set_regs_and_custom(AmigaMemView              *self,
   g_return_if_fail(AMIGA_IS_MEM_VIEW(self));
   if (regs) { self->regs = *regs; self->has_regs = true; }
   if (custom) { self->custom = *custom; self->has_custom = true; }
+  gtk_widget_set_sensitive(self->btn_presets[0], self->has_custom);
+  gtk_widget_set_sensitive(self->btn_presets[1], self->has_custom);
+  gtk_widget_set_sensitive(self->btn_presets[2], self->has_regs);
+  gtk_widget_set_sensitive(self->btn_presets[3], self->has_regs);
   if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->toggle_follow))) {
     uint32_t addr = 0;
     if (resolve_mem_expr(self, gtk_editable_get_text(GTK_EDITABLE(self->entry_addr)), &addr)) {
@@ -363,6 +493,7 @@ amiga_mem_view_set_data(AmigaMemView  *self,
   }
   g_byte_array_set_size(self->cur_bytes, 0);
   self->base_addr = base_addr;
+  self->find_hit_off = -1;
   if (bytes && len > 0) {
     g_byte_array_append(self->cur_bytes, bytes, (guint)len);
   }
@@ -383,13 +514,9 @@ void
 amiga_mem_view_set_grouping(AmigaMemView *self, int group_bytes)
 {
   g_return_if_fail(AMIGA_IS_MEM_VIEW(self));
-  if (group_bytes == 1) {
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_8b), TRUE);
-  } else if (group_bytes == 4) {
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_32b), TRUE);
-  } else {
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_16b), TRUE);
-  }
+  if (group_bytes == 1) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_8b), TRUE);
+  else if (group_bytes == 4) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_32b), TRUE);
+  else gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_16b), TRUE);
 }
 
 uint32_t

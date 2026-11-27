@@ -27,7 +27,7 @@ test_build_argv_profiles(void)
   AmigaRunnerLaunchSpec spec = {
     .amiberry_bin = "/usr/bin/amiberry",
     .profile = p,
-    .target_kind = AMIGA_TARGET_ADF_DOS,
+    .target_kind = AMIGA_TARGET_EXE_ADF,
     .target_name = "demo",
     .adf_path = "/tmp/demo.adf",
     .gdb_port = 2346,
@@ -46,12 +46,19 @@ test_build_argv_profiles(void)
   g_assert_true(argv_contains(argv, "cpu_threaded=false"));
   g_assert_true(argv_contains(argv, "ntsc=true"));
 
-  /* os_exe requires dh0_dir */
+  /* exe_dh0 requires dh0_dir */
   AmigaRunnerLaunchSpec bad = spec;
-  bad.target_kind = AMIGA_TARGET_OS_EXE;
+  bad.target_kind = AMIGA_TARGET_EXE_DH0;
   bad.dh0_dir = NULL;
   g_autoptr(GPtrArray) bad_argv = NULL;
   g_assert_false(amiga_runner_build_argv(&bad, &bad_argv, &err));
+  g_assert_nonnull(err);
+  g_clear_error(&err);
+
+  /* flat_bin cannot directly boot Amiberry */
+  AmigaRunnerLaunchSpec flat = spec;
+  flat.target_kind = AMIGA_TARGET_FLAT_BIN;
+  g_assert_false(amiga_runner_build_argv(&flat, &bad_argv, &err));
   g_assert_nonnull(err);
   g_clear_error(&err);
 

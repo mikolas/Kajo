@@ -301,13 +301,16 @@ amiga_disasm_view_init(AmigaDisasmView *self)
   self->nav_idx = -1;
   self->meta_rows = g_ptr_array_new_with_free_func((GDestroyNotify)disasm_row_meta_free);
 
-  GtkWidget *tb = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  GtkWidget *tb = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
   gtk_widget_add_css_class(tb, "amiga-disasm-toolbar");
-  gtk_widget_set_valign(tb, GTK_ALIGN_CENTER);
+
+  GtkWidget *r1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_set_valign(r1, GTK_ALIGN_CENTER);
 
   self->entry_goto = gtk_entry_new();
   gtk_widget_add_css_class(self->entry_goto, "amiga-entry");
   gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_goto), "$Addr / Symbol / PC (Ctrl+G)");
+  gtk_editable_set_width_chars(GTK_EDITABLE(self->entry_goto), 18);
   gtk_widget_set_hexpand(self->entry_goto, TRUE);
   gtk_widget_set_valign(self->entry_goto, GTK_ALIGN_CENTER);
   g_signal_connect(self->entry_goto, "activate", G_CALLBACK(on_goto_activate), self);
@@ -322,35 +325,47 @@ amiga_disasm_view_init(AmigaDisasmView *self)
   gtk_widget_set_sensitive(self->btn_fwd, FALSE);
   g_signal_connect(self->btn_fwd, "clicked", G_CALLBACK(on_fwd_clicked), self);
 
-  self->toggle_follow = gtk_toggle_button_new_with_label("📌 FOLLOW PC");
+  self->toggle_follow = gtk_toggle_button_new_with_label("📌 PC");
   gtk_widget_add_css_class(self->toggle_follow, "amiga-seg-btn");
+  gtk_widget_set_tooltip_text(self->toggle_follow, "Follow PC on stop");
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_follow), TRUE);
   g_signal_connect(self->toggle_follow, "toggled", G_CALLBACK(on_follow_pc_toggled), self);
 
-  self->btn_run_cursor = gtk_button_new_with_label("⏩ TO CURSOR");
+  gtk_box_append(GTK_BOX(r1), self->btn_back);
+  gtk_box_append(GTK_BOX(r1), self->btn_fwd);
+  gtk_box_append(GTK_BOX(r1), self->entry_goto);
+  gtk_box_append(GTK_BOX(r1), self->toggle_follow);
+
+  GtkWidget *r2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+  gtk_widget_set_valign(r2, GTK_ALIGN_CENTER);
+
+  self->btn_run_cursor = gtk_button_new_with_label("⏩ CURSOR");
   gtk_widget_add_css_class(self->btn_run_cursor, "ide-toolbar-btn");
+  gtk_widget_set_tooltip_text(self->btn_run_cursor, "Run to Cursor (Ctrl+F10)");
   g_signal_connect(self->btn_run_cursor, "clicked", G_CALLBACK(on_run_cursor_clicked), self);
 
-  self->btn_set_pc = gtk_button_new_with_label("🎯 SET PC");
+  self->btn_set_pc = gtk_button_new_with_label("🎯 PC");
   gtk_widget_add_css_class(self->btn_set_pc, "ide-toolbar-btn");
+  gtk_widget_set_tooltip_text(self->btn_set_pc, "Set PC to Selected Instruction");
   g_signal_connect(self->btn_set_pc, "clicked", G_CALLBACK(on_set_pc_clicked), self);
 
   self->btn_patch = gtk_button_new_with_label("✏ PATCH");
   gtk_widget_add_css_class(self->btn_patch, "ide-toolbar-btn");
+  gtk_widget_set_tooltip_text(self->btn_patch, "Patch Opcode Hex");
   g_signal_connect(self->btn_patch, "clicked", G_CALLBACK(on_patch_clicked), self);
 
   self->toggle_trace = gtk_toggle_button_new_with_label("📜 TRACE");
   gtk_widget_add_css_class(self->toggle_trace, "amiga-seg-btn");
+  gtk_widget_set_tooltip_text(self->toggle_trace, "Overlay Qemu Trace History");
   g_signal_connect(self->toggle_trace, "toggled", G_CALLBACK(on_trace_toggled), self);
 
-  gtk_box_append(GTK_BOX(tb), self->btn_back);
-  gtk_box_append(GTK_BOX(tb), self->btn_fwd);
-  gtk_box_append(GTK_BOX(tb), self->entry_goto);
-  gtk_box_append(GTK_BOX(tb), self->toggle_follow);
-  gtk_box_append(GTK_BOX(tb), self->btn_run_cursor);
-  gtk_box_append(GTK_BOX(tb), self->btn_set_pc);
-  gtk_box_append(GTK_BOX(tb), self->btn_patch);
-  gtk_box_append(GTK_BOX(tb), self->toggle_trace);
+  gtk_box_append(GTK_BOX(r2), self->btn_run_cursor);
+  gtk_box_append(GTK_BOX(r2), self->btn_set_pc);
+  gtk_box_append(GTK_BOX(r2), self->btn_patch);
+  gtk_box_append(GTK_BOX(r2), self->toggle_trace);
+
+  gtk_box_append(GTK_BOX(tb), r1);
+  gtk_box_append(GTK_BOX(tb), r2);
   gtk_box_append(GTK_BOX(self), tb);
 
   GtkWidget *scroll = gtk_scrolled_window_new();
@@ -448,10 +463,14 @@ amiga_disasm_view_set_rows(AmigaDisasmView *self,
     gtk_widget_add_css_class(op_lbl, "amiga-disasm-opcodes");
     gtk_widget_set_valign(op_lbl, GTK_ALIGN_CENTER);
 
-    g_autofree char *insn_s = g_strdup_printf("%-8s %s",
-                                              r->mnemonic ? r->mnemonic : "",
-                                              r->operands ? r->operands : "");
-    GtkWidget *insn_lbl = gtk_label_new(insn_s);
+    g_autofree char *m_esc = g_markup_escape_text(r->mnemonic ? r->mnemonic : "", -1);
+    g_autofree char *o_esc = g_markup_escape_text(r->operands ? r->operands : "", -1);
+    const char *op_col = (r->hw_reg_name != NULL || strstr(o_esc, "dff")) ? "#ff8c00" : "#4ec9b0";
+    g_autofree char *insn_mk = g_strdup_printf(
+        "<span foreground='#569cd6' weight='bold'>%-8s</span> <span foreground='%s'>%s</span>",
+        m_esc, op_col, o_esc);
+    GtkWidget *insn_lbl = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(insn_lbl), insn_mk);
     gtk_label_set_xalign(GTK_LABEL(insn_lbl), 0.0f);
     gtk_label_set_ellipsize(GTK_LABEL(insn_lbl), PANGO_ELLIPSIZE_END);
     gtk_widget_add_css_class(insn_lbl, "amiga-disasm-insn");

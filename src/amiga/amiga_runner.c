@@ -79,11 +79,16 @@ amiga_runner_build_argv(const AmigaRunnerLaunchSpec *spec,
   }
 
   /* Packaging mount */
-  if (spec->target_kind == AMIGA_TARGET_OS_EXE) {
+  if (spec->target_kind == AMIGA_TARGET_FLAT_BIN) {
+    g_ptr_array_unref(argv);
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                "flat_bin targets produce a flat binary and cannot boot Amiberry directly (use Attach :2345)");
+    return false;
+  } else if (spec->target_kind == AMIGA_TARGET_EXE_DH0) {
     if (!spec->dh0_dir || !spec->dh0_dir[0]) {
       g_ptr_array_unref(argv);
       g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
-                  "os_exe launch requires dh0_dir");
+                  "exe_dh0 launch requires dh0_dir");
       return false;
     }
     g_ptr_array_add(argv, g_strdup("-m"));
@@ -92,7 +97,7 @@ amiga_runner_build_argv(const AmigaRunnerLaunchSpec *spec,
     if (!spec->adf_path || !spec->adf_path[0]) {
       g_ptr_array_unref(argv);
       g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
-                  "adf launch requires adf_path");
+                  "exe_adf launch requires adf_path");
       return false;
     }
     g_ptr_array_add(argv, g_strdup("-0"));

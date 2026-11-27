@@ -426,10 +426,10 @@ amiga_bitplane_view_init(AmigaBitplaneView *self)
   gtk_widget_set_margin_start(vbox, 8);
   gtk_widget_set_margin_end(vbox, 8);
 
-  /* Top row: Provenance + Source + Manual addr + Refresh + PNG */
-  GtkWidget *r0 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  /* Compact 2-row controls so canvas + palette + probe bar fit in 720px */
+  GtkWidget *r0 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
   gtk_widget_set_valign(r0, GTK_ALIGN_CENTER);
-  self->prov_badge = gtk_label_new("EMU SNAPSHOT");
+  self->prov_badge = gtk_label_new("SNAP");
   gtk_widget_add_css_class(self->prov_badge, "amiga-badge-snapshot");
   gtk_widget_set_valign(self->prov_badge, GTK_ALIGN_CENTER);
 
@@ -444,28 +444,29 @@ amiga_bitplane_view_init(AmigaBitplaneView *self)
   gtk_widget_set_hexpand(self->entry_addr, TRUE);
   g_signal_connect(self->entry_addr, "activate", G_CALLBACK(on_refresh_clicked), self);
 
+  self->dd_depth = gtk_drop_down_new_from_strings(
+      (const char *[]){"1BPL", "2BPL", "3BPL", "4BPL", "5BPL", "6BPL", "HAM6", "EHB", NULL});
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_depth), 3);
+  gtk_widget_add_css_class(self->dd_depth, "amiga-header-dd");
+
   GtkWidget *btn_ref = gtk_button_new_with_label("↻");
-  gtk_widget_add_css_class(btn_ref, "ide-toolbar-btn");
+  gtk_widget_add_css_class(btn_ref, "amiga-mini-btn");
   g_signal_connect(btn_ref, "clicked", G_CALLBACK(on_refresh_clicked), self);
 
-  GtkWidget *btn_png = gtk_button_new_with_label("💾 PNG");
-  gtk_widget_add_css_class(btn_png, "ide-toolbar-btn");
+  GtkWidget *btn_png = gtk_button_new_with_label("💾PNG");
+  gtk_widget_add_css_class(btn_png, "amiga-mini-btn");
   g_signal_connect(btn_png, "clicked", G_CALLBACK(on_export_png_clicked), self);
 
   gtk_box_append(GTK_BOX(r0), self->prov_badge);
   gtk_box_append(GTK_BOX(r0), self->dd_source);
   gtk_box_append(GTK_BOX(r0), self->entry_addr);
+  gtk_box_append(GTK_BOX(r0), self->dd_depth);
   gtk_box_append(GTK_BOX(r0), btn_ref);
   gtk_box_append(GTK_BOX(r0), btn_png);
   gtk_box_append(GTK_BOX(vbox), r0);
 
-  /* Config row 1: Depth, Layout, Size */
-  GtkWidget *r1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-  self->dd_depth = gtk_drop_down_new_from_strings(
-      (const char *[]){"1 BPL", "2 BPL", "3 BPL", "4 BPL", "5 BPL", "6 BPL", "HAM6", "EHB", NULL});
-  gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_depth), 3);
-  gtk_widget_add_css_class(self->dd_depth, "amiga-header-dd");
-
+  GtkWidget *r1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  gtk_widget_set_valign(r1, GTK_ALIGN_CENTER);
   self->dd_layout = gtk_drop_down_new_from_strings(
       (const char *[]){"PLANAR", "INTERLV", "LINE×2", NULL});
   gtk_widget_add_css_class(self->dd_layout, "amiga-header-dd");
@@ -474,32 +475,27 @@ amiga_bitplane_view_init(AmigaBitplaneView *self)
       (const char *[]){"320×256", "320×200", "640×256", "160×128", NULL});
   gtk_widget_add_css_class(self->dd_size, "amiga-header-dd");
 
-  gtk_box_append(GTK_BOX(r1), self->dd_depth);
   gtk_box_append(GTK_BOX(r1), self->dd_layout);
   gtk_box_append(GTK_BOX(r1), self->dd_size);
-  gtk_box_append(GTK_BOX(vbox), r1);
-
-  /* Config row 2: P0..P5 + Grid + Buffer flip */
-  GtkWidget *r2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
   for (int i = 0; i < 6; i++) {
     g_autofree char *pl = g_strdup_printf("P%d", i);
     self->plane_btns[i] = gtk_toggle_button_new_with_label(pl);
     gtk_widget_add_css_class(self->plane_btns[i], "amiga-insp-tab");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->plane_btns[i]), TRUE);
     g_signal_connect(self->plane_btns[i], "toggled", G_CALLBACK(on_toggle_changed), self);
-    gtk_box_append(GTK_BOX(r2), self->plane_btns[i]);
+    gtk_box_append(GTK_BOX(r1), self->plane_btns[i]);
   }
   self->btn_grid = gtk_toggle_button_new_with_label("#16");
   gtk_widget_add_css_class(self->btn_grid, "amiga-insp-tab");
   g_signal_connect(self->btn_grid, "toggled", G_CALLBACK(on_toggle_changed), self);
 
-  self->btn_buf = gtk_toggle_button_new_with_label("BACK");
+  self->btn_buf = gtk_toggle_button_new_with_label("BK");
   gtk_widget_add_css_class(self->btn_buf, "amiga-insp-tab");
   g_signal_connect(self->btn_buf, "toggled", G_CALLBACK(on_toggle_changed), self);
 
-  gtk_box_append(GTK_BOX(r2), self->btn_grid);
-  gtk_box_append(GTK_BOX(r2), self->btn_buf);
-  gtk_box_append(GTK_BOX(vbox), r2);
+  gtk_box_append(GTK_BOX(r1), self->btn_grid);
+  gtk_box_append(GTK_BOX(r1), self->btn_buf);
+  gtk_box_append(GTK_BOX(vbox), r1);
 
   g_signal_connect(self->dd_depth, "notify::selected", G_CALLBACK(on_control_changed), self);
   g_signal_connect(self->dd_layout, "notify::selected", G_CALLBACK(on_control_changed), self);

@@ -216,6 +216,8 @@
 #define KAJO_CFG_KEY_AMIGA_ADF_UAEBOARD      "adf_uaeboard_guest_output"
 #define KAJO_CFG_KEY_AMIGA_DEFAULT_TOOLCHAIN "default_toolchain"
 #define KAJO_CFG_KEY_AMIGA_EXTRA_BIN_PATHS   "extra_bin_paths"
+#define KAJO_CFG_KEY_AMIGA_C_INCLUDE_DIRS    "c_include_dirs"
+#define KAJO_CFG_KEY_AMIGA_ASM_INCLUDE_DIRS  "asm_include_dirs"
 #define KAJO_CFG_KEY_AMIGA_HRM_DIR           "hrm_dir"
 #define KAJO_CFG_KEY_AMIGA_INHERIT_IDE_PREFS "inherit_ide_editor_prefs"
 #define KAJO_CFG_KEY_AMIGA_SHOW_CYCLE_GUTTER "show_cycle_gutter"

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KAJO AMIGA — Aero + Metro 68000 / OCS–AGA IDE Mockup (v3)</title>
+  <title>KAJO AMIGA — Aero + Metro 68000 / C OCS–AGA IDE Mockup (v5 IDE Ergonomics)</title>
   <style>
     :root {
       --metro-accent: #0078d4;
@@ -89,15 +89,16 @@
     .amiga-window.w-2-3 { width: 1088px; max-width: 100%; }
     .amiga-window.w-1-2 { width: 814px; max-width: 100%; }
 
-    /* Zone 1: Header Bar (34px) */
+    /* Zone 1: 3-Zone Header Bar (34px) */
     .amiga-header {
-      height: 34px; flex-shrink: 0; background: var(--surface-3); border-bottom: 1px solid var(--border-struct);
-      display: flex; align-items: center; justify-content: space-between; padding: 0 6px 0 10px; gap: 6px; user-select: none;
+      min-height: 34px; flex-shrink: 0; background: var(--surface-3); border-bottom: 1px solid var(--border-struct);
+      display: flex; align-items: center; justify-content: space-between; padding: 3px 6px 3px 10px; gap: 6px; user-select: none;
     }
-    .hdr-left, .hdr-center, .hdr-right { display: flex; align-items: center; gap: 5px; min-width: 0; }
+    .hdr-left, .hdr-center, .hdr-right { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .hdr-center { justify-content: center; }
     .hdr-brand {
       font-weight: 800; font-size: 11px; letter-spacing: 0.9px; color: #fff;
-      padding-right: 8px; border-right: 1px solid var(--border-struct); white-space: nowrap;
+      padding-right: 7px; border-right: 1px solid var(--border-struct); white-space: nowrap;
       display: flex; align-items: center; gap: 5px;
     }
     .hdr-brand .gem { color: var(--metro-accent); }
@@ -111,24 +112,38 @@
     select.hdr-select, select.mini-select {
       -webkit-appearance: none; appearance: none;
       background-color: var(--surface-0); color: var(--text-bright);
-      padding-right: 18px;
+      padding-right: 16px;
       background-image: linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%), linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
-      background-position: calc(100% - 10px) 50%, calc(100% - 6px) 50%;
+      background-position: calc(100% - 9px) 50%, calc(100% - 5px) 50%;
       background-size: 4px 4px, 4px 4px;
       background-repeat: no-repeat;
     }
     select option { background: #141414; color: #f0f0f0; }
+
     .hdr-btn {
       height: 24px; padding: 0 7px; background: var(--surface-4); border: 1px solid var(--border-struct);
       color: var(--text-soft); font-size: 10px; font-weight: 700; cursor: pointer;
       display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
     }
-    .hdr-btn:hover { background: var(--surface-hover); border-color: var(--metro-accent); color: #fff; }
+    .hdr-btn:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--metro-accent); color: #fff; }
+    .hdr-btn:disabled { opacity: 0.35; cursor: default; }
     .hdr-btn.primary { background: var(--metro-accent); border-color: var(--metro-accent); color: #fff; }
+    .hdr-btn.run { background: rgba(16, 137, 62, 0.22); border-color: var(--metro-success); color: #9de8b8; }
+    .hdr-btn.run:hover:not(:disabled) { background: var(--metro-success); color: #fff; }
     .hdr-btn.warn { border-color: var(--metro-warning); color: #ffb84d; }
     .hdr-btn.danger { border-color: var(--metro-urgent); color: var(--metro-urgent-text); }
+    .hdr-btn.danger:hover:not(:disabled) { background: var(--metro-urgent); color: #fff; }
+    .hdr-btn.active { background: rgba(var(--metro-accent-rgb), 0.24); border-color: var(--metro-accent); color: #fff; }
+    .hdr-btn.icon { width: 25px; justify-content: center; padding: 0; font-size: 11px; }
     .hdr-btn.close { width: 26px; justify-content: center; padding: 0; }
     .hdr-btn.close:hover { background: var(--metro-urgent); border-color: var(--metro-urgent); color: #fff; }
+    .hdr-win-sep { width: 1px; height: 16px; background: var(--border-struct); margin: 0 2px; }
+
+    /* Fixed Debug Transport Cluster */
+    .transport-cluster {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 4px; background: var(--surface-1); border: 1px solid var(--border-struct);
+    }
 
     .metro-badge {
       display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
@@ -137,45 +152,21 @@
     }
     .metro-badge.live { color: #4cd964; border-color: rgba(16, 137, 62, 0.6); }
     .metro-badge.warn { color: var(--metro-warning); border-color: rgba(255, 140, 0, 0.55); background: rgba(255, 140, 0, 0.10); }
+    .metro-badge.err  { color: var(--metro-urgent-text); border-color: rgba(232, 17, 35, 0.65); background: rgba(232, 17, 35, 0.14); }
     .metro-badge.dim  { color: var(--text-muted); }
     .metro-badge.mag  { color: #f08ee6; border-color: rgba(180, 0, 158, 0.65); background: rgba(180, 0, 158, 0.14); }
 
     /* Honest State / Setup Banner */
     .sys-banner {
-      flex-shrink: 0; padding: 5px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border-struct);
+      flex-shrink: 0; padding: 4px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border-struct);
       border-left: 4px solid var(--metro-warning); display: flex; align-items: center; justify-content: space-between;
       gap: 10px; font-size: 10.5px; color: var(--text-body);
     }
     .sys-banner.info { border-left-color: var(--metro-telemetry); }
-
-    /* Zone 2: 68000 CPU & Beam Strip */
-    .cpu-strip {
-      flex-shrink: 0; background: var(--surface-2); border-bottom: 1px solid var(--border-struct);
-      padding: 4px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; user-select: none;
-    }
-    .cpu-regs-wrap { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
-    .cpu-reg-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-    .reg-chip {
-      display: inline-flex; align-items: center; gap: 4px; padding: 1px 5px;
-      background: var(--surface-0); border: 1px solid var(--border-subtle); font-size: 10.5px; cursor: pointer;
-    }
-    .reg-chip:hover { border-color: var(--metro-accent); }
-    .reg-chip.changed { border-color: var(--metro-warning); background: rgba(255, 140, 0, 0.14); }
-    .reg-name { color: var(--text-dim); font-weight: 700; }
-    .reg-val { color: var(--text-bright); font-weight: 600; }
-    .reg-chip.changed .reg-val { color: #ffb84d; }
-    .sr-strip { display: inline-flex; gap: 2px; margin-left: 4px; }
-    .sr-bit {
-      width: 15px; height: 17px; display: inline-flex; align-items: center; justify-content: center;
-      font-size: 9.5px; font-weight: 700; background: var(--surface-0); border: 1px solid var(--border-subtle); color: var(--text-dim); cursor: pointer;
-    }
-    .sr-bit:hover { border-color: var(--metro-accent); color: #fff; }
-    .sr-bit.set { background: rgba(0, 216, 240, 0.16); border-color: var(--metro-telemetry); color: var(--metro-telemetry); }
-    .cpu-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
-    .beam-row, .step-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+    .sys-banner.mag  { border-left-color: var(--metro-magenta); }
 
     .tool-btn {
-      height: 22px; padding: 0 7px; background: var(--surface-4); border: 1px solid var(--border-struct);
+      height: 22px; padding: 0 6px; background: var(--surface-4); border: 1px solid var(--border-struct);
       color: var(--text-body); font-size: 10px; font-weight: 700; cursor: pointer;
       display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
     }
@@ -183,70 +174,134 @@
     .tool-btn.active { background: var(--metro-accent); border-color: var(--metro-accent); color: #fff; }
     .tool-btn.warn { border-color: var(--metro-warning); color: #ffb84d; }
 
-    /* Zone 3: 3-Pane Workspace */
+    /* Niri 1/2 Half-Screen Switcher (<900px in Debug / Attach / Running+Snap) */
+    .half-strip {
+      height: 28px; flex-shrink: 0; background: var(--surface-3); border-bottom: 1px solid var(--border-struct);
+      padding: 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px; user-select: none;
+    }
+
+    /* Zone 3: Workspace */
     .workspace-body { flex: 1; min-height: 0; display: flex; background: var(--surface-0); }
 
-    /* Left Sidebar */
+    /* Left Sidebar (Software / CPU Execution Context) */
     .left-sidebar {
-      width: 220px; flex-shrink: 0; background: var(--surface-1); border-right: 1px solid var(--border-struct);
+      width: 216px; flex-shrink: 0; background: var(--surface-1); border-right: 1px solid var(--border-struct);
       display: flex; flex-direction: column; min-height: 0;
     }
-    .pane-hdr {
-      height: 28px; flex-shrink: 0; padding: 0 8px; background: var(--surface-3); border-bottom: 1px solid var(--border-struct);
-      display: flex; align-items: center; justify-content: space-between; font-size: 10px; font-weight: 700;
-      letter-spacing: 0.7px; color: var(--text-secondary); text-transform: uppercase; user-select: none;
+    .left-sidebar.debug-wide { width: 274px; }
+    .sb-tabs {
+      height: 28px; flex-shrink: 0; display: flex; align-items: stretch;
+      background: var(--surface-3); border-bottom: 1px solid var(--border-struct); user-select: none;
     }
-    .tree-scroll { flex: 1; overflow-y: auto; padding: 4px 0; }
-    .tree-cat { padding: 6px 8px 3px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.7px; color: var(--text-dim); text-transform: uppercase; }
+    .sb-tab {
+      flex: 1; border: none; border-right: 1px solid var(--border-struct); border-bottom: 2px solid transparent;
+      background: transparent; color: var(--text-secondary); font-size: 10px; font-weight: 700; cursor: pointer;
+      padding: 0 6px; white-space: nowrap;
+    }
+    .sb-tab:last-child { border-right: none; }
+    .sb-tab:hover { background: var(--surface-hover); color: #fff; }
+    .sb-tab.active { background: var(--surface-1); color: #fff; border-bottom-color: var(--metro-accent); }
+
+    .tree-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
+    .tree-cat {
+      padding: 6px 8px 3px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.7px;
+      color: var(--text-dim); text-transform: uppercase; display: flex; align-items: center; justify-content: space-between;
+    }
     .tree-row {
-      height: 24px; padding: 0 8px; display: flex; align-items: center; justify-content: space-between;
+      height: 23px; padding: 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px;
       font-size: 10.5px; color: var(--text-body); cursor: pointer; border-left: 3px solid transparent;
     }
+    .tree-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tree-row:hover { background: var(--surface-3); color: #fff; }
     .tree-row.active { background: rgba(var(--metro-accent-rgb), 0.22); border-left-color: var(--metro-accent); color: #fff; }
-    .git-m { font-size: 9px; font-weight: 700; padding: 0 4px; border: 1px solid rgba(255, 140, 0, 0.5); color: var(--metro-warning); }
+    .git-m { font-size: 9px; font-weight: 700; padding: 0 4px; border: 1px solid rgba(255, 140, 0, 0.5); color: var(--metro-warning); flex-shrink: 0; }
+    .git-e { font-size: 9px; font-weight: 700; padding: 0 4px; border: 1px solid rgba(232, 17, 35, 0.7); color: var(--metro-urgent-text); flex-shrink: 0; }
+    .hunk-name { color: var(--metro-telemetry); font-weight: 700; font-size: 10px; }
 
-    .hunk-panel {
-      border-top: 1px solid var(--border-struct); background: var(--surface-2);
-      padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;
+    /* Debug Accordion Sections & Vertical 2-Column CPU Register Table */
+    .dbg-sec { border-bottom: 1px solid var(--border-struct); }
+    .dbg-sec-hdr {
+      height: 24px; padding: 0 8px; background: var(--surface-2);
+      display: flex; align-items: center; justify-content: space-between; gap: 4px;
+      font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px; color: var(--text-soft);
+      cursor: pointer; user-select: none;
     }
-    .hunk-row {
-      display: flex; align-items: center; justify-content: space-between; font-size: 10px;
-      padding: 2px 5px; background: var(--surface-0); border: 1px solid var(--border-subtle); cursor: pointer;
-    }
-    .hunk-row:hover { border-color: var(--metro-accent); }
-    .hunk-name { color: var(--metro-telemetry); font-weight: 700; }
-    .level-trough { height: 6px; background: #262626; width: 100%; }
-    .level-fill { height: 100%; background: var(--metro-accent); }
-    .level-fill.warn { background: var(--metro-warning); }
-    .level-fill.ok { background: var(--metro-success); }
-    .level-fill.urgent { background: var(--metro-urgent); }
+    .dbg-sec-hdr:hover { background: var(--surface-3); color: #fff; }
+    .dbg-sec-body { padding: 5px 7px; display: flex; flex-direction: column; gap: 4px; background: var(--surface-1); }
+    .dbg-sec.collapsed .dbg-sec-body { display: none; }
 
-    /* Center Editor / Disassembler Pane */
+    .cpu-pc-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 4px;
+      padding: 3px 5px; background: var(--surface-0); border: 1px solid var(--border-subtle); font-size: 10px;
+    }
+    .sr-strip { display: flex; gap: 2px; justify-content: space-between; }
+    .sr-bit {
+      flex: 1; height: 17px; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; background: var(--surface-0); border: 1px solid var(--border-subtle);
+      color: var(--text-dim); cursor: pointer;
+    }
+    .sr-bit:hover { border-color: var(--metro-accent); color: #fff; }
+    .sr-bit.set { background: rgba(0, 216, 240, 0.16); border-color: var(--metro-telemetry); color: var(--metro-telemetry); }
+
+    .reg-grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 4px; }
+    .reg-cell {
+      display: flex; align-items: center; justify-content: space-between; gap: 4px;
+      padding: 1px 5px; background: var(--surface-0); border: 1px solid var(--border-subtle);
+      font-size: 10px; cursor: pointer;
+    }
+    .reg-cell:hover { border-color: var(--metro-accent); }
+    .reg-cell.changed { border-color: var(--metro-warning); background: rgba(255, 140, 0, 0.14); }
+    .reg-name { color: var(--text-dim); font-weight: 700; }
+    .reg-val  { color: var(--text-bright); font-weight: 600; }
+    .reg-cell.changed .reg-val { color: #ffb84d; }
+
+    .bit-pill { padding: 1px 4px; font-size: 8.5px; font-weight: 700; background: var(--surface-0); border: 1px solid var(--border-subtle); color: var(--text-dim); cursor: pointer; }
+    .bit-pill.on { border-color: var(--metro-success); color: #4cd964; background: rgba(16, 137, 62, 0.14); }
+    .bit-pill.trap-on { border-color: var(--metro-warning); color: #ffb84d; background: rgba(255, 140, 0, 0.14); }
+
+    .sb-item-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 4px;
+      padding: 2px 5px; background: var(--surface-0); border: 1px solid var(--border-subtle);
+      font-size: 10px; cursor: pointer;
+    }
+    .sb-item-row:hover { border-color: var(--metro-accent); background: var(--surface-2); }
+    .bp-check-lbl { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; cursor: pointer; }
+    .bp-check-lbl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .search-hit {
+      padding: 4px 8px; border-bottom: 1px solid var(--border-subtle); font-size: 10px; cursor: pointer;
+    }
+    .search-hit:hover { background: var(--surface-3); }
+
+    /* Center Editor / Disassembler / Setup Pane */
     .editor-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface-0); }
     .tab-ribbon {
       height: 28px; flex-shrink: 0; background: var(--surface-2); border-bottom: 1px solid var(--border-struct);
-      display: flex; align-items: center; justify-content: space-between; padding-right: 6px; user-select: none;
+      display: flex; align-items: center; justify-content: space-between; padding-right: 6px; gap: 6px; user-select: none;
     }
     .tab-list { display: flex; align-items: stretch; height: 100%; overflow-x: auto; min-width: 0; flex: 1; }
     .tab-pill {
-      padding: 0 10px; display: flex; align-items: center; gap: 6px; font-size: 10.5px;
+      padding: 0 9px; display: flex; align-items: center; gap: 6px; font-size: 10.5px;
       color: var(--text-secondary); border-right: 1px solid var(--border-struct); border-top: 2px solid transparent; cursor: pointer;
       white-space: nowrap;
     }
     .tab-pill:hover { background: var(--surface-3); color: #fff; }
     .tab-pill.active { background: var(--surface-0); color: #fff; border-top-color: var(--metro-accent); }
+    .tab-x { font-size: 9px; color: var(--text-dim); padding: 0 2px; }
+    .tab-x:hover { color: #fff; background: var(--metro-urgent); }
+
     .seg-group { display: inline-flex; border: 1px solid var(--border-struct); background: var(--surface-0); flex-shrink: 0; }
     .seg-btn {
       padding: 2px 7px; background: transparent; border: none; border-right: 1px solid var(--border-struct);
       font-size: 9.5px; font-weight: 700; color: var(--text-secondary); cursor: pointer; white-space: nowrap;
     }
     .seg-btn:last-child { border-right: none; }
+    .seg-btn:hover { color: #fff; background: var(--surface-3); }
     .seg-btn.active { background: var(--metro-accent); color: #fff; }
 
     .disasm-bar {
-      height: 28px; flex-shrink: 0; background: var(--surface-1); border-bottom: 1px solid var(--border-struct);
-      padding: 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      min-height: 28px; flex-shrink: 0; background: var(--surface-1); border-bottom: 1px solid var(--border-struct);
+      padding: 3px 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap;
     }
     .code-toolbar-hint {
       height: 22px; flex-shrink: 0; background: #13161a; border-bottom: 1px solid var(--border-subtle);
@@ -259,6 +314,7 @@
     .code-line { display: flex; align-items: center; padding-right: 10px; white-space: pre; cursor: pointer; }
     .code-line:hover { background: #151515; }
     .code-line.cur-pc { background: rgba(255, 185, 0, 0.12); }
+    .code-line.err-ln { background: rgba(232, 17, 35, 0.14); box-shadow: inset 2px 0 0 var(--metro-urgent); }
     .code-line.sel-ln { background: rgba(var(--metro-accent-rgb), 0.22); }
     .code-line.cur-pc.sel-ln { background: rgba(var(--metro-accent-rgb), 0.28); box-shadow: inset 2px 0 0 #ffb900; }
     .gutter {
@@ -274,7 +330,13 @@
     .g-ops { width: 82px; color: var(--text-dim); padding-right: 6px; border-left: 1px solid #222; padding-left: 6px; }
     .g-git { width: 3px; height: 14px; margin-right: 6px; background: transparent; }
     .g-git.mod { background: var(--metro-accent); }
+    .g-git.err { background: var(--metro-urgent); }
     .g-cyc { width: 66px; text-align: right; color: var(--metro-telemetry); font-size: 10px; opacity: 0.85; border-left: 1px solid #222; padding-left: 5px; }
+
+    .inline-err-pill {
+      margin-left: 14px; padding: 0 6px; font-size: 10px; font-weight: 700;
+      color: var(--metro-urgent-text); background: rgba(232, 17, 35, 0.16); border: 1px solid rgba(232, 17, 35, 0.55);
+    }
 
     .tok-lbl { color: #dcdcaa; font-weight: 700; }
     .tok-op  { color: #569cd6; font-weight: 600; }
@@ -284,20 +346,24 @@
     .tok-hw  { color: #ff8c00; text-decoration: underline dotted #ff8c00; cursor: pointer; }
     .tok-cmt { color: #6a9955; font-style: italic; }
 
-    /* Right Hardware Inspector */
+    /* Right Hardware Inspector (Custom Chips Only — Debug / Attach / Explicit Snapshot) */
     .inspector-pane {
-      width: 448px; flex-shrink: 0; background: var(--surface-1); border-left: 1px solid var(--border-struct);
+      width: 430px; flex-shrink: 0; background: var(--surface-1); border-left: 1px solid var(--border-struct);
       display: flex; flex-direction: column; min-height: 0;
     }
-    .insp-tabs { display: flex; background: var(--surface-3); border-bottom: 1px solid var(--border-struct); flex-shrink: 0; overflow-x: auto; }
+    .insp-tabs { display: flex; align-items: stretch; background: var(--surface-3); border-bottom: 1px solid var(--border-struct); flex-shrink: 0; overflow-x: auto; }
     .insp-tab {
-      flex: 1; height: 30px; padding: 0 5px; background: transparent; border: none;
+      flex: 1; height: 28px; padding: 0 5px; background: transparent; border: none;
       border-right: 1px solid var(--border-struct); border-bottom: 2px solid transparent;
       color: var(--text-secondary); font-size: 9.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
     }
-    .insp-tab:last-child { border-right: none; }
     .insp-tab:hover { background: var(--surface-hover); color: #fff; }
     .insp-tab.active { background: var(--surface-1); color: #fff; border-bottom-color: var(--metro-accent); }
+    .insp-close {
+      width: 28px; height: 28px; border: none; background: transparent; color: var(--text-muted);
+      cursor: pointer; font-size: 11px; flex-shrink: 0;
+    }
+    .insp-close:hover { background: var(--metro-urgent); color: #fff; }
     .insp-content { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
     .insp-panel { display: none; flex-direction: column; gap: 8px; }
     .insp-panel.active { display: flex; }
@@ -361,9 +427,6 @@
     .kv-k { color: var(--text-muted); }
     .kv-v { color: var(--text-bright); font-weight: 600; }
     .bit-pills { display: flex; gap: 3px; flex-wrap: wrap; }
-    .bit-pill { padding: 1px 5px; font-size: 9px; font-weight: 700; background: var(--surface-0); border: 1px solid var(--border-subtle); color: var(--text-dim); cursor: pointer; }
-    .bit-pill.on { border-color: var(--metro-success); color: #4cd964; background: rgba(16, 137, 62, 0.14); }
-    .bit-pill.trap-on { border-color: var(--metro-warning); color: #ffb84d; background: rgba(255, 140, 0, 0.14); }
 
     .dma-strip { height: 22px; display: flex; background: var(--surface-0); border: 1px solid var(--border-strong); overflow: hidden; }
     .dma-seg { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; border-right: 1px solid #101010; }
@@ -373,14 +436,14 @@
     .slider-row input[type="range"] { flex: 1; accent-color: var(--metro-accent); }
 
     .md-h1 { font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--border-struct); padding-bottom: 4px; }
-    .md-p  { font-family: var(--font-sans); font-size: 11.5px; color: var(--text-body); }
+    .md-p  { font-family: var(--font-sans); font-size: 11.5px; color: var(--text-body); line-height: 1.5; }
     .md-table { width: 100%; border-collapse: collapse; font-size: 10px; }
     .md-table th, .md-table td { border: 1px solid var(--border-struct); padding: 3px 6px; text-align: left; }
     .md-table th { background: var(--surface-0); color: var(--text-secondary); }
 
-    /* Zone 4: Bottom Ephemeral Drawer */
+    /* Zone 4: Full-Width Bottom Ephemeral Drawer */
     .bottom-drawer {
-      height: 174px; flex-shrink: 0; background: var(--surface-1);
+      height: 156px; flex-shrink: 0; background: var(--surface-1);
       border-top: 1px solid var(--metro-accent); display: flex; flex-direction: column;
     }
     .drawer-hdr {
@@ -397,14 +460,13 @@
     .drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 10px; }
     .drawer-panel { display: none; }
     .drawer-panel.active { display: block; }
-    .debug-3col { display: grid; grid-template-columns: 1.15fr 1fr 1.15fr; gap: 8px; }
+    .build-2col { display: grid; grid-template-columns: 1.1fr 1fr; gap: 8px; }
     .mini-box { background: var(--surface-0); border: 1px solid var(--border-subtle); padding: 5px 7px; font-size: 10px; display: flex; flex-direction: column; gap: 3px; }
     .mini-hdr { font-size: 9px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 2px; display: flex; justify-content: space-between; align-items: center; }
-    .watch-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
     .w-fmt { padding: 0 4px; border: 1px solid var(--border-struct); background: var(--surface-3); color: var(--metro-telemetry); font-size: 9px; cursor: pointer; }
     .w-fmt:hover { border-color: var(--metro-accent); }
-    .repl-row { display: flex; gap: 4px; margin-top: 2px; }
-    .repl-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border-strong); padding: 2px 6px; font-size: 10px; color: #fff; }
+    .repl-row { display: flex; gap: 4px; margin-top: 4px; }
+    .repl-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border-strong); padding: 3px 7px; font-size: 10.5px; color: #fff; }
     .hex-line { font-size: 10.5px; line-height: 1.45; white-space: pre; color: var(--text-body); }
     .hex-addr { color: var(--metro-telemetry); }
     .hex-chg  { color: #ffb84d; background: rgba(255, 140, 0, 0.16); font-weight: 700; }
@@ -412,33 +474,60 @@
     .log-line { font-size: 10.5px; line-height: 1.45; }
     .log-ok   { color: #4cd964; }
     .log-kpf  { color: var(--metro-telemetry); }
+    .diag-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 3px 6px; background: var(--surface-2); border: 1px solid var(--border-subtle);
+      border-left: 3px solid var(--metro-urgent); font-size: 10px; cursor: pointer;
+    }
+    .diag-row.warn { border-left-color: var(--metro-warning); }
+    .diag-row:hover { border-color: var(--metro-accent); background: var(--surface-hover); }
 
-    /* Zone 5: Status Bar */
+    /* Zone 5: Interactive Status Bar */
     .status-bar {
       height: 26px; flex-shrink: 0; background: var(--surface-3); border-top: 1px solid var(--border-struct);
       display: flex; align-items: center; justify-content: space-between; padding-right: 10px; font-size: 10px; user-select: none;
     }
-    .st-left, .st-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .st-left, .st-right { display: flex; align-items: center; gap: 7px; min-width: 0; }
     .mode-pill {
       height: 26px; padding: 0 9px; background: var(--metro-accent); color: #fff;
       font-weight: 800; font-size: 10px; display: inline-flex; align-items: center; letter-spacing: 0.5px; flex-shrink: 0;
     }
+    .mode-pill.running { background: var(--metro-success); }
+    .mode-pill.paused  { background: var(--metro-warning); color: #111; }
+    .mode-pill.attach  { background: var(--metro-magenta); }
     .st-item { color: var(--text-secondary); white-space: nowrap; }
     .st-item strong { color: var(--text-bright); }
+    .st-click { cursor: pointer; }
+    .st-click:hover { filter: brightness(1.2); color: #fff; }
 
-    /* Responsive Niri Half-Screen Reflow (< 900px matches spec §5) */
-    .amiga-window.w-2-3 .left-sidebar { display: none; }
-    .amiga-window.w-1-2 .left-sidebar { display: none; }
-    .amiga-window.w-1-2.half-show-editor .inspector-pane { display: none; }
-    .amiga-window.w-1-2.half-show-insp .editor-pane { display: none; }
-    .amiga-window.w-1-2.half-show-insp .inspector-pane { width: 100%; border-left: none; }
-    .amiga-window.w-1-2 .debug-3col { grid-template-columns: 1fr; }
-    .amiga-window.w-1-2 #profile-select { display: none; }
+    /* Responsive Niri Reflow */
+    .amiga-window.w-1-2 .amiga-header { flex-wrap: wrap; }
+    .amiga-window.w-1-2 .build-2col { grid-template-columns: 1fr; }
+    .amiga-window.w-1-2.half-v-cpu .left-sidebar { display: flex !important; width: 100%; border-right: none; }
+    .amiga-window.w-1-2.half-v-cpu .editor-pane,
+    .amiga-window.w-1-2.half-v-cpu .inspector-pane,
+    .amiga-window.w-1-2.half-v-cpu .bottom-drawer { display: none !important; }
+
+    .amiga-window.w-1-2.half-v-code .left-sidebar,
+    .amiga-window.w-1-2.half-v-code .inspector-pane { display: none !important; }
+    .amiga-window.w-1-2.half-v-code .editor-pane { display: flex !important; }
+
+    .amiga-window.w-1-2.half-v-disasm .left-sidebar,
+    .amiga-window.w-1-2.half-v-disasm .inspector-pane { display: none !important; }
+    .amiga-window.w-1-2.half-v-disasm .editor-pane { display: flex !important; }
+
+    .amiga-window.w-1-2.half-v-insp .left-sidebar,
+    .amiga-window.w-1-2.half-v-insp .editor-pane,
+    .amiga-window.w-1-2.half-v-insp .bottom-drawer { display: none !important; }
+    .amiga-window.w-1-2.half-v-insp .inspector-pane { display: flex !important; width: 100%; border-left: none; }
+
+    .amiga-window.w-1-2.half-v-drawer .workspace-body { display: none !important; }
+    .amiga-window.w-1-2.half-v-drawer .bottom-drawer { display: flex !important; flex: 1; height: auto; border-top: none; }
 
     /* Project Menu Popover */
     .proj-menu-wrap { position: relative; display: inline-flex; }
     .proj-popover {
-      position: absolute; top: 26px; left: 0; width: 250px; z-index: 150;
+      position: absolute; top: 26px; left: 0; width: 256px; z-index: 150;
       background: var(--surface-3); border: 1px solid var(--metro-accent);
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85); padding: 4px 0;
     }
@@ -510,7 +599,7 @@
       color: var(--text-soft); white-space: pre; background: #0c0c0c;
     }
 
-    /* New Project Wizard Modal */
+    /* Modals */
     .modal-backdrop {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.72); z-index: 200;
       display: flex; align-items: center; justify-content: center; padding: 16px;
@@ -543,17 +632,18 @@
 </head>
 <body>
 <div class="demo-shell">
-  <!-- Outside Demo Switcher Bar -->
+  <!-- Outside Demo Control Bar -->
   <div class="demo-bar">
     <div class="demo-group">
-      <span class="demo-lbl">View / State</span>
-      <button class="demo-btn" data-st="welcome" onclick="setSessionState('welcome', this)">Welcome</button>
-      <button class="demo-btn" data-st="idle" onclick="setSessionState('idle', this)">Disconnected</button>
-      <button class="demo-btn" data-st="running" onclick="setSessionState('running', this)">Running</button>
-      <button class="demo-btn active" data-st="paused" onclick="setSessionState('paused', this)">Paused</button>
-      <button class="demo-btn" data-st="attach" onclick="setSessionState('attach', this)">Attach</button>
-      <button class="demo-btn" id="demo-btn-setup" onclick="setSessionState('paused', findStBtn('paused')); setCenterView('setup');">⚙ Project Setup</button>
-      <button class="demo-btn" id="demo-btn-new" onclick="openNewProjectModal()">+ New Project</button>
+      <span class="demo-lbl">Scenario</span>
+      <button class="demo-btn" data-st="welcome" onclick="setScenario('welcome', this)">Welcome</button>
+      <button class="demo-btn active" data-st="edit" onclick="setScenario('edit', this)">Edit (Code)</button>
+      <button class="demo-btn" data-st="build_err" onclick="setScenario('build_err', this)">Build Error</button>
+      <button class="demo-btn" data-st="setup" onclick="setScenario('setup', this)">⚙ Project Setup</button>
+      <button class="demo-btn" data-st="running" onclick="setScenario('running', this)">Running (50 FPS)</button>
+      <button class="demo-btn" data-st="paused" onclick="setScenario('paused', this)">Paused (Debug)</button>
+      <button class="demo-btn" data-st="attach" onclick="setScenario('attach', this)">Attach (Live)</button>
+      <button class="demo-btn" onclick="openNewProjectModal()">+ New Project</button>
     </div>
     <div class="demo-group">
       <span class="demo-lbl">Niri Width</span>
@@ -574,105 +664,100 @@
 
   <!-- Stage -->
   <div id="niri-stage" class="niri-stage">
-    <div id="amiga-window" class="amiga-window half-show-editor">
-      <!-- ZONE 1: Header Bar -->
+    <div id="amiga-window" class="amiga-window">
+      <!-- ZONE 1: 3-Zone Header Bar (Project | Fixed Transport | Layout + Window Chrome) -->
       <header class="amiga-header">
         <div class="hdr-left">
           <div class="hdr-brand"><span class="gem">◈</span> KAJO AMIGA</div>
-          <div class="proj-menu-wrap">
-            <button id="btn-proj-menu" class="hdr-pill" onclick="toggleProjMenu(event)" title="Project Creation, Switcher &amp; Setup">📁 PROJ ▾</button>
+          <div id="proj-menu-wrap" class="proj-menu-wrap">
+            <button id="btn-proj-menu" class="hdr-pill" onclick="toggleProjMenu(event)" title="Project Creation, Open, Setup &amp; Attach">📁 PROJ ▾</button>
             <div id="proj-popover" class="proj-popover hidden">
               <button class="proj-item" onclick="closeProjMenu();openNewProjectModal()"><span>+ New Project Wizard…</span><span class="proj-kbd">Ctrl+Shift+N</span></button>
-              <button class="proj-item" onclick="closeProjMenu();setSessionState('welcome',findStBtn('welcome'))"><span>📂 Open / Recent Projects…</span><span class="proj-kbd">Ctrl+O</span></button>
-              <button class="proj-item" onclick="closeProjMenu();setSessionState('paused',findStBtn('paused'));setCenterView('setup')"><span>⚙ Project Setup (kajo-amiga.toml)</span><span class="proj-kbd">Ctrl+Shift+P</span></button>
+              <button class="proj-item" onclick="closeProjMenu();setScenario('welcome',findStBtn('welcome'))"><span>📂 Open / Recent Projects…</span><span class="proj-kbd">Ctrl+O</span></button>
+              <button class="proj-item" onclick="closeProjMenu();setScenario('setup',findStBtn('setup'))"><span>⚙ Project Setup (kajo-amiga.toml)</span><span class="proj-kbd">Ctrl+Shift+P</span></button>
               <button class="proj-item" onclick="closeProjMenu();exportMakefileToast()"><span>📄 Export GNU Makefile</span><span class="proj-kbd"></span></button>
               <div class="proj-sep"></div>
-              <button class="proj-item" onclick="closeProjMenu();setSessionState('attach',findStBtn('attach'))"><span>🔌 Attach to Amiberry :2345</span><span class="proj-kbd">Ctrl+Shift+A</span></button>
-              <button class="proj-item" onclick="closeProjMenu();setSessionState('welcome',findStBtn('welcome'))"><span>🏠 Welcome / Start Screen</span><span class="proj-kbd"></span></button>
+              <button class="proj-item" onclick="closeProjMenu();setScenario('attach',findStBtn('attach'))"><span>🔌 Attach to Amiberry :2345</span><span class="proj-kbd">Ctrl+Shift+A</span></button>
+              <button class="proj-item" onclick="closeProjMenu();setScenario('welcome',findStBtn('welcome'))"><span>🏠 Welcome / Start Screen</span><span class="proj-kbd"></span></button>
             </div>
           </div>
-          <button id="btn-tree" class="hdr-pill active" onclick="toggleTree()" title="Toggle Left Sidebar (Space e)">🌲</button>
-          <button id="btn-cpu" class="hdr-pill active" onclick="toggleCpu()">⚙ CPU</button>
-          <div id="half-toggle" class="seg-group hidden" title="Niri <900px Split View Switcher">
-            <button id="half-ed-btn" class="seg-btn active" onclick="setHalfPane('editor')">📝 CODE</button>
-            <button id="half-in-btn" class="seg-btn" onclick="setHalfPane('insp')">🔧 INSPECTOR</button>
-          </div>
-          <select id="target-select" class="hdr-select" style="max-width:154px;" onchange="changeTarget(this.value)" title="Active [[target]] in kajo-amiga.toml">
+          <select id="target-select" class="hdr-select" style="max-width:136px;" onchange="changeTarget(this.value)" title="Active [[target]] in kajo-amiga.toml">
             <option value="bobs">bobs (DH0:)</option>
             <option value="demo_disk">demo_disk (ADFlib)</option>
             <option value="gouraud">gouraud (DH0:)</option>
             <option value="cube">cube (DH0:)</option>
           </select>
-          <button id="boot-mode-btn" class="hdr-pill" onclick="toggleBootMode()" title="Packaging Target Mode (DH0 Directory vs in-process ADFlib .ADF)">DH0:</button>
-        </div>
-        <div class="hdr-center">
-          <select id="profile-select" class="hdr-select" style="max-width:152px;" title="Active Hardware Run Profile ([[profile]])">
-            <option value="a500_ocs">A500 OCS · 512K</option>
-            <option value="a500p_ecs">A500+ ECS · 1M</option>
-            <option value="a1200_aga">A1200 020 · AGA</option>
+          <select id="profile-select" class="hdr-select" style="max-width:132px;" title="Active Hardware Run Profile ([[profile]])">
+            <option value="a500_ocs">A500 OCS</option>
+            <option value="a500p_ecs">A500+ ECS</option>
+            <option value="a1200_aga">A1200 AGA</option>
           </select>
-          <span class="metro-badge warn" id="rsp-pill">AMIBERRY :2345 ● PAUSED</span>
         </div>
+
+        <!-- Center: ONE Fixed-Position Transport Cluster -->
+        <div class="hdr-center" id="hdr-center">
+          <div class="transport-cluster" id="tc-offline">
+            <button class="hdr-btn" onclick="setScenario('build_err', findStBtn('build_err'))" title="Build Target (Space r b)">🔨 BUILD</button>
+            <button class="hdr-btn" onclick="setScenario('running', findStBtn('running'))" title="Build &amp; Run Free (50 FPS)">▶ RUN</button>
+            <button class="hdr-btn run" onclick="setScenario('paused', findStBtn('paused'))" title="Build &amp; Debug (F5)">🐞 F5</button>
+          </div>
+          <div class="transport-cluster hidden" id="tc-live">
+            <span class="metro-badge" id="rsp-pill">● PAUSED :2345</span>
+            <button id="btn-play-pause" class="hdr-btn run" onclick="togglePlayPause()" title="Continue / Pause (F5 / F6)">▶</button>
+            <button id="btn-step-over" class="hdr-btn" onclick="stepCpu()" title="Step Over (F10)">↷</button>
+            <button id="btn-step-into" class="hdr-btn" onclick="stepCpu()" title="Step Into (F11)">⤵</button>
+            <button id="btn-step-out" class="hdr-btn" onclick="stepCpu()" title="Step Out (F12)">⤴</button>
+            <button id="btn-restart" class="hdr-btn" onclick="showInfoBanner('↻ Rebuilding &amp; restarting Amiberry target… (Ctrl+Shift+F5)')" title="Rebuild &amp; Restart (Ctrl+Shift+F5)">↻</button>
+            <button id="btn-snap" class="hdr-btn" onclick="takeSnapshot()" title="One-shot Pause → Read → Continue Snapshot">↻ SNAP</button>
+            <button id="btn-stop" class="hdr-btn danger" onclick="setScenario('edit', findStBtn('edit'))" title="Stop Managed Amiberry (Shift+F5)">■</button>
+            <button id="btn-detach" class="hdr-btn" onclick="setScenario('edit', findStBtn('edit'))" title="Detach Cleanly (Never Kills External Amiberry)">🔌</button>
+          </div>
+        </div>
+
+        <!-- Right: Compact Panel Layout Toggles + Icon-Only Window Chrome -->
         <div class="hdr-right">
-          <button id="btn-build" class="hdr-btn" onclick="triggerBuildLog()">▶ BUILD</button>
-          <button id="btn-run" class="hdr-btn" onclick="setSessionState('running', findStBtn('running'))">▶ RUN</button>
-          <button id="btn-debug" class="hdr-btn primary" onclick="setSessionState('paused', findStBtn('paused'))">🐞 F5</button>
-          <button id="btn-pause" class="hdr-btn warn hidden" onclick="setSessionState('paused', findStBtn('paused'))">⏸ PAUSE</button>
-          <button id="btn-snap" class="hdr-btn hidden" onclick="takeSnapshot()">↻ SNAPSHOT</button>
-          <button id="btn-attach" class="hdr-btn" onclick="setSessionState('attach', findStBtn('attach'))">🔌 ATTACH</button>
-          <button id="btn-detach" class="hdr-btn hidden" onclick="setSessionState('idle', findStBtn('idle'))">🔌 DETACH</button>
-          <button id="btn-stop" class="hdr-btn danger hidden" onclick="setSessionState('idle', findStBtn('idle'))">■ STOP</button>
-          <button class="hdr-btn" onclick="toggleDrawer()">▼ DRAWER</button>
-          <button class="hdr-btn" onclick="openSettingsPreview()" title="Open Amiga Settings (Ctrl+, · kajo-settings --page amiga)">⚙</button>
+          <button id="btn-panel-left" class="hdr-btn icon active" onclick="toggleLeftPanel()" title="Toggle Left Sidebar (Ctrl+B / Space e)">◧</button>
+          <button id="btn-panel-bottom" class="hdr-btn icon" onclick="toggleBottomPanel()" title="Toggle Bottom Drawer">⬓</button>
+          <button id="btn-panel-right" class="hdr-btn icon hidden" onclick="toggleRightPanel()" title="Toggle Hardware Inspector">◨</button>
+          <span class="hdr-win-sep" id="hdr-win-sep"></span>
+          <button class="hdr-btn icon" onclick="openSettingsPreview()" title="Toolchain &amp; Suite Settings (Ctrl+, · kajo-settings --page amiga)">⚙</button>
+          <button class="hdr-btn icon" onclick="toggleFloatPreview(this)" title="Float / Tile Window">🗗</button>
           <button class="hdr-btn close" title="Close">✕</button>
         </div>
       </header>
 
-      <!-- Honest State / Setup Banner -->
+      <!-- Honest State / Notification Banner -->
       <div id="sys-banner" class="sys-banner hidden">
         <span id="sys-banner-txt"></span>
         <span id="sys-banner-actions"></span>
       </div>
 
-      <!-- ZONE 2: 68000 CPU & Beam Telemetry Strip -->
-      <section id="cpu-strip" class="cpu-strip">
-        <div class="cpu-regs-wrap">
-          <div class="cpu-reg-row" id="cpu-row-d"></div>
-          <div class="cpu-reg-row" id="cpu-row-a"></div>
+      <!-- Niri 1/2 Half-Screen Perspective Switcher (<900px in Debug / Attach / Running+Snap) -->
+      <div id="half-strip" class="half-strip hidden">
+        <div class="seg-group" id="half-seg-group">
+          <button id="hs-cpu" class="seg-btn" onclick="setHalfView('cpu')">🐞 CPU/STATE</button>
+          <button id="hs-code" class="seg-btn active" onclick="setHalfView('code')">📝 CODE</button>
+          <button id="hs-disasm" class="seg-btn" onclick="setHalfView('disasm')">⚙ DISASM</button>
+          <button id="hs-insp" class="seg-btn" onclick="setHalfView('insp')">🔧 CHIPS/BPL</button>
+          <button id="hs-drawer" class="seg-btn" onclick="setHalfView('drawer')">▓ HEX/CMD</button>
         </div>
-        <div class="cpu-actions">
-          <div class="beam-row">
-            <span class="metro-badge" id="beam-badge">VPOS $08E (142) · HPOS $64 · FRAME #412</span>
-            <span class="metro-badge live" id="cyc-badge" title="Delta from qRcmd,execution-status cycles">+22 CYC</span>
-          </div>
-          <div class="step-row">
-            <button class="tool-btn active" onclick="stepCpu()" title="F10 Step Over (qRcmd,step-over)">↷ OVER</button>
-            <button class="tool-btn" onclick="stepCpu()" title="F11 Step Into (vCont;s)">⤵ INTO</button>
-            <button class="tool-btn" onclick="stepCpu()" title="F12 Step Out (A7)">⤴ OUT</button>
-            <button class="tool-btn" onclick="runMonitorPreset('checkpoint save /tmp/cp.uss')" title="qRcmd,checkpoint save">💾 CP</button>
-            <button class="tool-btn" onclick="runMonitorPreset('checkpoint restore /tmp/cp.uss')" title="qRcmd,checkpoint restore">⏮ CP</button>
-            <button class="tool-btn" onclick="setSessionState('running', findStBtn('running'))">▶ CONT</button>
-            <button class="tool-btn" id="btn-cyc-col" onclick="toggleCycleCol()">⏱ CYC: ON</button>
-          </div>
-        </div>
-      </section>
+        <span class="metro-badge dim" style="font-size:9px;">814px NIRI SPLIT</span>
+      </div>
 
-      <!-- ZONE 3: 3-Pane Workspace -->
+      <!-- ZONE 3: Workspace -->
       <div class="workspace-body">
-        <!-- Left Sidebar: Files+Hunks (Project) or Tasks+Segments (Attach) -->
-        <aside id="left-sidebar" class="left-sidebar">
-          <div class="pane-hdr">
-            <span id="left-hdr-lbl">Workspace &amp; Hunks</span>
-            <span style="display:flex;align-items:center;gap:3px;">
-              <button class="w-fmt" onclick="openNewProjectModal()" title="New Project Wizard (Ctrl+Shift+N)">+NEW</button>
-              <button class="w-fmt" onclick="setSessionState('paused',findStBtn('paused'));setCenterView('setup')" title="Project Setup (kajo-amiga.toml · Ctrl+Shift+P)">SETUP</button>
-            </span>
+        <!-- Left Sidebar: Edit (Files+Search) OR Debug (2-Col CPU + Stack + Watches + BPs + Hunks/Tasks) -->
+        <aside id="left-sidebar" class="left-sidebar hidden">
+          <div class="sb-tabs">
+            <button id="sb-tab-dbg" class="sb-tab hidden" onclick="switchSidebarTab('debug')">🐞 DEBUG</button>
+            <button id="sb-tab-files" class="sb-tab active" onclick="switchSidebarTab('files')">📁 FILES</button>
+            <button id="sb-tab-search" class="sb-tab" onclick="switchSidebarTab('search')">🔎 SEARCH</button>
+            <button id="sb-tab-tasks" class="sb-tab hidden" onclick="switchSidebarTab('tasks')">⚙ TASKS/MAP</button>
           </div>
-          <div class="tree-scroll" id="left-tree-body"></div>
-          <div class="hunk-panel" id="left-hunk-panel"></div>
+          <div class="tree-scroll" id="left-sb-body"></div>
         </aside>
 
-        <!-- Welcome / Start Screen (Shown when no workspace is open) -->
+        <!-- Welcome / Start Screen -->
         <section id="welcome-view" class="welcome-view hidden">
           <div class="welcome-grid">
             <div class="welcome-hero">
@@ -687,25 +772,25 @@
                 <div><div style="font-weight:800;font-size:11.5px;color:#fff;">+ NEW AMIGA PROJECT</div><div style="font-size:10px;color:var(--text-secondary);">68k ASM, Bare-Metal OCS, Mixed C+ASM, or Bootable ADF</div></div>
                 <span class="metro-badge">Ctrl+Shift+N</span>
               </button>
-              <button class="welcome-act" onclick="setSessionState('paused',findStBtn('paused'))">
+              <button class="welcome-act" onclick="setScenario('edit', findStBtn('edit'))">
                 <div><div style="font-weight:800;font-size:11.5px;color:#fff;">📂 OPEN WORKSPACE / IMPORT MAKEFILE</div><div style="font-size:10px;color:var(--text-secondary);">Load kajo-amiga.toml or wrap Makefile project (Option D)</div></div>
                 <span class="metro-badge dim">Ctrl+O</span>
               </button>
-              <button class="welcome-act" onclick="setSessionState('attach',findStBtn('attach'))">
+              <button class="welcome-act" onclick="setScenario('attach', findStBtn('attach'))">
                 <div><div style="font-weight:800;font-size:11.5px;color:#fff;">🔌 ATTACH TO RUNNING AMIBERRY (:2345)</div><div style="font-size:10px;color:var(--text-secondary);">Zero-source Motorola disasm, Bitplanes, Copper &amp; Memory Hex</div></div>
                 <span class="metro-badge mag">Ctrl+Shift+A</span>
               </button>
               <div class="card" style="margin-top:2px;">
                 <div class="card-hdr"><span class="card-title">Recent Projects</span><span class="metro-badge dim">3</span></div>
-                <div class="recent-row" onclick="setSessionState('paused',findStBtn('paused'))">
+                <div class="recent-row" onclick="setScenario('edit', findStBtn('edit'))">
                   <span><strong>seeandseedee</strong> <span style="color:var(--text-dim);">~/src/seeandseedee · A500 OCS</span></span>
                   <span class="metro-badge">ASM · DH0:</span>
                 </div>
-                <div class="recent-row" onclick="setSessionState('paused',findStBtn('paused'));setCenterView('setup')">
+                <div class="recent-row" onclick="setScenario('edit', findStBtn('edit'))">
                   <span><strong>tracker_hud_c</strong> <span style="color:var(--text-dim);">~/src/amiga/tracker_hud · A1200</span></span>
                   <span class="metro-badge live">C+ASM · elf2hunk</span>
                 </div>
-                <div class="recent-row" onclick="setSessionState('paused',findStBtn('paused'));setCenterView('setup');switchSetupTab('targets',null)">
+                <div class="recent-row" onclick="setScenario('setup', findStBtn('setup'))">
                   <span><strong>copper_trackmo</strong> <span style="color:var(--text-dim);">~/src/amiga/trackmo · A500</span></span>
                   <span class="metro-badge warn">ADFlib (.adf)</span>
                 </div>
@@ -713,7 +798,7 @@
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;">
               <div class="card accent-left">
-                <div class="card-hdr"><span class="card-title">System &amp; Toolchain Readiness</span><span class="prov-pill prov-live">DETECTED</span></div>
+                <div class="card-hdr"><span class="card-title">System, Toolchain &amp; Kickstart Readiness</span><span class="prov-pill prov-live">5 / 7 OK</span></div>
                 <div class="kv-grid">
                   <div class="kv-cell"><span class="kv-k">amiberry (gdbserver)</span><span class="kv-v" style="color:#4cd964;">✓ 8.5.0</span></div>
                   <div class="kv-cell"><span class="kv-k">adflib (in-process)</span><span class="kv-v" style="color:#4cd964;">✓ 0.10.7</span></div>
@@ -721,8 +806,8 @@
                   <div class="kv-cell"><span class="kv-k">clangd (C LSP)</span><span class="kv-v" style="color:#4cd964;">✓ /usr/bin</span></div>
                   <div class="kv-cell"><span class="kv-k">vasmm68k_mot</span><span class="kv-v" style="color:#ffb84d;">⚠ extra_bin_paths</span></div>
                   <div class="kv-cell"><span class="kv-k">m68k-amiga-elf-gcc</span><span class="kv-v" style="color:#ffb84d;">⚠ extra_bin_paths</span></div>
-                  <div class="kv-cell"><span class="kv-k">elf2hunk / ld</span><span class="kv-v" style="color:#ffb84d;">⚠ extra_bin_paths</span></div>
-                  <div class="kv-cell"><span class="kv-k">Kickstart 1.3 / 3.1</span><span class="kv-v" style="color:var(--metro-telemetry);">kajo-settings</span></div>
+                  <div class="kv-cell"><span class="kv-k">Kickstart 1.3 (A500)</span><span class="kv-v" style="color:#4cd964;">✓ kick13.rom</span></div>
+                  <div class="kv-cell"><span class="kv-k">Kickstart 3.1 (A1200)</span><span class="kv-v" style="color:var(--metro-telemetry);">kajo-settings</span></div>
                 </div>
                 <div class="probe-bar"><span>Paths configured in ~/.config/kajo/amiga.toml</span><span style="cursor:pointer;text-decoration:underline;" onclick="openSettingsPreview()">Edit extra_bin_paths →</span></div>
               </div>
@@ -739,47 +824,51 @@
           </div>
         </section>
 
-        <!-- Center Source / Motorola Disassembly / Project Setup Pane -->
-        <main id="editor-pane" class="editor-pane">
-          <div class="tab-ribbon">
+        <!-- Center Source / Motorola Disassembly / Project Setup Tab Pane -->
+        <main id="editor-pane" class="editor-pane hidden">
+          <div id="tab-ribbon" class="tab-ribbon">
             <div class="tab-list" id="center-tabs"></div>
             <div style="display:flex;align-items:center;gap:6px;">
-              <div class="seg-group" title="Center View Mode">
+              <div id="src-dis-seg" class="seg-group" title="Center View Mode (Alt+D)">
                 <button id="btn-view-src" class="seg-btn active" onclick="setCenterView('source')">SOURCE</button>
-                <button id="btn-view-dis" class="seg-btn" onclick="setCenterView('disasm')">DISASM (M68K)</button>
-                <button id="btn-view-set" class="seg-btn" onclick="setCenterView('setup')">⚙ SETUP</button>
+                <button id="btn-view-dis" class="seg-btn" onclick="setCenterView('disasm')">DISASM</button>
               </div>
+              <span id="step-gran-pill" class="metro-badge dim hidden" style="font-size:9px;" title="Step granularity for F10">STEP: LINE</span>
+              <button id="btn-open-setup" class="hdr-pill" onclick="setScenario('setup', findStBtn('setup'))" title="Open kajo-amiga.toml tab (Ctrl+Shift+P)">⚙ SETUP</button>
               <span class="metro-badge dim" id="disasm-src-badge" style="font-size:9px;">m68k · K:HRM</span>
             </div>
           </div>
 
           <!-- Disassembly Nav Bar (Visible in DISASM view) -->
           <div id="disasm-bar" class="disasm-bar hidden">
-            <div class="ctrl-row">
-              <button class="tool-btn" onclick="setCenterView('source')" title="Alt+Left Nav Back">←</button>
-              <input id="dis-goto" class="mini-input" style="width:118px;" value="$0212C8" title="Ctrl+G Go to Address / Symbol / Reg" onkeydown="if(event.key==='Enter')renderCenter()" />
+            <div class="ctrl-row" style="flex:1;min-width:210px;">
+              <button class="tool-btn" onclick="setCenterView('source')" title="Alt+Left / Go to Source">←</button>
+              <button class="tool-btn" title="Alt+Right Nav Forward">→</button>
+              <input id="dis-goto" class="mini-input" style="flex:1;min-width:110px;max-width:220px;" value="$0212C8" title="Ctrl+G Go to Address / Symbol / Reg" onkeydown="if(event.key==='Enter')renderCenter()" />
               <button class="tool-btn" onclick="renderCenter()">GO</button>
-              <button id="btn-follow-pc" class="tool-btn active" onclick="this.classList.toggle('active')">FOLLOW PC</button>
+              <button id="btn-follow-pc" class="tool-btn active" onclick="this.classList.toggle('active')">📌 FOLLOW PC</button>
             </div>
             <div class="ctrl-row">
-              <button class="tool-btn" onclick="runMonitorPreset('history read 20')" title="qRcmd,history read (128-entry ring)">📜 TRACE (128)</button>
-              <button class="tool-btn warn" onclick="jumpMem('$0212C8','PATCH PC')">✏ PATCH</button>
+              <button class="tool-btn" title="Run to Selected Instruction (Ctrl+F10)">⏩ TO CUR</button>
+              <button class="tool-btn" title="Set PC to Selected Instruction">🎯 SET PC</button>
+              <button class="tool-btn warn" onclick="jumpMem('$0212C8','PATCH PC')" title="Patch 16-bit opcode word (M)">✏ PATCH</button>
+              <button class="tool-btn" onclick="openTraceDrawer()" title="Open 128-entry CPU Trace Ring">📜 TRACE</button>
             </div>
           </div>
 
           <!-- Line-by-line Hint / Token Hover Bar -->
           <div id="code-hint-bar" class="code-toolbar-hint">
-            <span id="code-hover-txt">Click / Shift-click lines to sum 68k cycles · Hover $DFFxxx / LVO</span>
-            <span style="color:var(--text-dim);flex-shrink:0;">● BP · Ctrl+F10 Run→Cur</span>
+            <span id="code-hover-txt">Hover $DFFxxx / LVO · Press K for HRM Quick-Doc · Shift-click lines to sum 68k cycles</span>
+            <span id="code-hint-right" style="color:var(--text-dim);flex-shrink:0;">Click gutter: BP (F9) · Ctrl+P: Quick Open</span>
           </div>
 
           <div class="code-scroll" id="code-view"></div>
 
-          <!-- Center-Pane Project Setup View ([kajo-amiga.toml]) -->
+          <!-- Center-Pane Project Setup View ([kajo-amiga.toml ×]) -->
           <div id="project-setup-view" class="setup-view hidden">
             <div class="setup-topbar">
               <div style="display:flex;align-items:center;gap:8px;">
-                <strong style="font-size:11px;color:#fff;">kajo-amiga.toml — seeandseedee</strong>
+                <strong style="font-size:11px;color:#fff;">kajo-amiga.toml — CopperBars</strong>
                 <span class="prov-pill prov-live">OPTION D: NATIVE DAG</span>
               </div>
               <div style="display:flex;align-items:center;gap:5px;">
@@ -802,14 +891,15 @@
           </div>
         </main>
 
-        <!-- Right Hardware Inspector -->
-        <aside id="inspector-pane" class="inspector-pane">
+        <!-- Right Hardware Inspector (Custom Chips ONLY — Paused / Attach / Explicit Snapshot) -->
+        <aside id="inspector-pane" class="inspector-pane hidden">
           <div class="insp-tabs">
-            <button class="insp-tab active" data-tab="bitplanes" onclick="switchInspector('bitplanes')">▤ BITPLANES</button>
-            <button class="insp-tab" data-tab="copper" onclick="switchInspector('copper')">⚡ COPPER</button>
+            <button class="insp-tab active" data-tab="bitplanes" onclick="switchInspector('bitplanes')">▤ BPL</button>
+            <button class="insp-tab" data-tab="copper" onclick="switchInspector('copper')">⚡ COP</button>
             <button class="insp-tab" data-tab="chips" onclick="switchInspector('chips')">🔧 CHIPS</button>
             <button class="insp-tab" data-tab="dma" onclick="switchInspector('dma')">📊 DMA</button>
             <button class="insp-tab" data-tab="hrm" onclick="switchInspector('hrm')">📖 HRM</button>
+            <button class="insp-close" onclick="closeInspector()" title="Hide Hardware Inspector">✕</button>
           </div>
 
           <div class="insp-content">
@@ -817,29 +907,30 @@
             <div id="tab-bitplanes" class="insp-panel active">
               <div class="card accent-left">
                 <div class="card-hdr">
-                  <span class="card-title">Bitplane Viewer (On-Stop Snapshot)</span>
+                  <span class="card-title">Bitplane Viewer</span>
                   <span class="prov-pill prov-snap" id="bpl-src-pill">EMU SNAP · BPL1PT $039800</span>
                 </div>
                 <div class="ctrl-row">
                   <select id="bpl-source" class="mini-select" onchange="updateBitplaneMeta()">
-                    <option value="snap">Source: m dff000,200 (BPLxPT)</option>
-                    <option value="sym">Source: Symbol (scr0)</option>
-                    <option value="man">Source: Manual $Addr</option>
+                    <option value="snap">SNAP (m dff000,200)</option>
+                    <option value="sym">SYM (scr0)</option>
+                    <option value="man">MANUAL $Addr</option>
                   </select>
                   <select id="bpl-depth" class="mini-select" onchange="renderBitplanes()">
-                    <option value="1">1 BPL (2 col)</option>
-                    <option value="2" selected>2 BPL (4 col)</option>
-                    <option value="3">3 BPL (8 col)</option>
-                    <option value="4">4 BPL (16 col)</option>
-                    <option value="5">5 BPL (32 col)</option>
+                    <option value="1">1 BPL</option>
+                    <option value="2" selected>2 BPL</option>
+                    <option value="3">3 BPL</option>
+                    <option value="4">4 BPL</option>
+                    <option value="5">5 BPL</option>
                     <option value="6">6 BPL / EHB</option>
-                    <option value="ham6">HAM6 (4096)</option>
+                    <option value="ham6">HAM6</option>
                   </select>
                   <select id="bpl-layout" class="mini-select" onchange="updateBitplaneMeta()">
-                    <option value="interleaved" selected>INTERLEAVED</option>
+                    <option value="interleaved" selected>INTERLV</option>
                     <option value="planar">PLANAR</option>
-                    <option value="line2x">LINE ×2 (128→256)</option>
+                    <option value="line2x">LINE ×2</option>
                   </select>
+                  <button class="tool-btn" style="margin-left:auto;" onclick="exportBitplanePng()">💾 PNG</button>
                 </div>
                 <div class="ctrl-row" style="justify-content:space-between;">
                   <div style="display:flex;gap:3px;" id="plane-btn-group">
@@ -847,12 +938,11 @@
                     <button id="btn-p1" class="tool-btn active" onclick="togglePlane(1)">P1</button>
                     <button id="btn-p2" class="tool-btn" onclick="togglePlane(2)">P2</button>
                     <button id="btn-p3" class="tool-btn" onclick="togglePlane(3)">P3</button>
-                    <button id="btn-grid" class="tool-btn" onclick="toggleGrid()">GRID 16px</button>
+                    <button id="btn-grid" class="tool-btn" onclick="toggleGrid()">#16</button>
                   </div>
                   <div style="display:flex;gap:3px;">
                     <button id="btn-front" class="tool-btn active" onclick="setBuf('front')">FRONT</button>
                     <button id="btn-back" class="tool-btn" onclick="setBuf('back')">BACK</button>
-                    <button class="tool-btn" onclick="exportBitplanePng()">💾 PNG</button>
                   </div>
                 </div>
                 <div class="bpl-canvas-box">
@@ -874,15 +964,15 @@
                   <span class="prov-pill prov-snap" id="cop-src-pill">EMU SNAP · COP1LC $038200</span>
                 </div>
                 <div class="ctrl-row">
-                  <input id="cop-addr-inp" class="mini-input" style="width:92px;" value="$038200" title="Copperlist address or symbol" />
+                  <input id="cop-addr-inp" class="mini-input" style="width:88px;" value="$038200" title="Copperlist address or symbol" />
                   <button class="tool-btn" onclick="loadCopperAddr()">LOAD</button>
-                  <button class="tool-btn" onclick="scanCopper()">🔎 SCAN COP</button>
-                  <button class="tool-btn warn" onclick="watchCop1lc()">👁 WATCH $DFF080</button>
+                  <button class="tool-btn" onclick="scanCopper()">🔎 SCAN</button>
+                  <button class="tool-btn warn" onclick="watchCop1lc()">👁 $DFF080</button>
                 </div>
                 <div class="ctrl-row">
                   <button class="tool-btn active" onclick="filterCopper('all', this)">ALL (7)</button>
                   <button class="tool-btn" onclick="filterCopper('wait', this)">WAITS / BFD=0</button>
-                  <button class="tool-btn" onclick="filterCopper('blt', this)">BLITTER MOVES</button>
+                  <button class="tool-btn" onclick="filterCopper('blt', this)">BLITTER</button>
                   <button class="tool-btn" onclick="filterCopper('display', this)">DISPLAY</button>
                 </div>
                 <div id="copper-list" style="display:flex;flex-direction:column;gap:3px;"></div>
@@ -896,7 +986,7 @@
             <div id="tab-chips" class="insp-panel">
               <div class="card accent-left">
                 <div class="card-hdr">
-                  <span class="card-title">OCS Readable Registers ($DFF002–$01E)</span>
+                  <span class="card-title">OCS Readable ($DFF002–$01E)</span>
                   <span class="prov-pill prov-live">LIVE</span>
                 </div>
                 <div class="kv-grid">
@@ -915,10 +1005,10 @@
 
               <div class="card warn-left">
                 <div class="card-hdr">
-                  <span class="card-title">Blitter &amp; Display Snapshot ($DFF040–$1BE)</span>
+                  <span class="card-title">Blitter &amp; Display ($DFF040–$1BE)</span>
                   <div style="display:flex;gap:4px;align-items:center;">
                     <button id="btn-trace-blits" class="tool-btn" onclick="toggleTraceBlits()" title="Non-breaking log_only=1 watch range dff040 36 2 ... 1">👁 TRACE BLITS</button>
-                    <span class="prov-pill prov-snap" id="blt-prov-pill">EMU SNAPSHOT (m dff000,200)</span>
+                    <span class="prov-pill prov-snap" id="blt-prov-pill">EMU SNAPSHOT</span>
                   </div>
                 </div>
                 <div class="kv-grid">
@@ -926,16 +1016,16 @@
                   <div class="kv-cell"><span class="kv-k">BLTCON1</span><span class="kv-v">$3000 (BSH=3)</span></div>
                   <div class="kv-cell"><span class="kv-k">MINTERM</span><span class="kv-v">$CA (A&amp;B)|(C&amp;~B)</span></div>
                   <div class="kv-cell"><span class="kv-k">BLTSIZE</span><span class="kv-v">$0782 (30r×2w)</span></div>
-                  <div class="kv-cell"><span class="kv-k">BLTAPT</span><span class="kv-v">$0421E0 (mask)</span></div>
-                  <div class="kv-cell"><span class="kv-k">BLTBPT</span><span class="kv-v">$040C40 (bob)</span></div>
-                  <div class="kv-cell"><span class="kv-k">BLTCPT/DPT</span><span class="kv-v">$03F416 (scr)</span></div>
+                  <div class="kv-cell" style="cursor:pointer;" onclick="jumpMem('$0421E0','BLTAPT')"><span class="kv-k">BLTAPT</span><span class="kv-v" style="color:var(--metro-telemetry);">$0421E0 ↗</span></div>
+                  <div class="kv-cell" style="cursor:pointer;" onclick="jumpMem('$040C40','BLTBPT')"><span class="kv-k">BLTBPT</span><span class="kv-v" style="color:var(--metro-telemetry);">$040C40 ↗</span></div>
+                  <div class="kv-cell" style="cursor:pointer;" onclick="jumpMem('$03F416','BLTDPT')"><span class="kv-k">BLTCPT/DPT</span><span class="kv-v" style="color:var(--metro-telemetry);">$03F416 ↗</span></div>
                   <div class="kv-cell"><span class="kv-k">MOD A/B/C/D</span><span class="kv-v">0 / 0 / 36 / 36</span></div>
                 </div>
               </div>
 
               <div class="card">
                 <div class="card-hdr">
-                  <span class="card-title">Omitted From save_custom() Snapshot</span>
+                  <span class="card-title">Omitted From save_custom()</span>
                   <span class="prov-pill prov-wo">WO — UNAVAILABLE</span>
                 </div>
                 <div class="kv-grid">
@@ -1029,68 +1119,19 @@
         </aside>
       </div>
 
-      <!-- ZONE 4: Bottom Ephemeral Drawer -->
-      <section id="bottom-drawer" class="bottom-drawer">
+      <!-- ZONE 4: Full-Width Bottom Ephemeral Drawer -->
+      <section id="bottom-drawer" class="bottom-drawer hidden">
         <div class="drawer-hdr">
           <div class="drawer-tabs">
-            <button class="drawer-tab active" data-dtab="debug" onclick="switchDrawer('debug')">🐞 DEBUG, TRAPS &amp; WATCH</button>
-            <button class="drawer-tab" data-dtab="mem" onclick="switchDrawer('mem')">🧠 MEMORY HEX</button>
-            <button id="tab-btn-build" class="drawer-tab" data-dtab="build" onclick="switchDrawer('build')">🔨 BUILD &amp; GUEST OUTPUT</button>
+            <button id="tab-btn-mem" class="drawer-tab" data-dtab="mem" onclick="switchDrawer('mem')">▓ MEMORY HEX</button>
+            <button id="tab-btn-trace" class="drawer-tab" data-dtab="trace" onclick="switchDrawer('trace')">📜 TRACE (128)</button>
+            <button id="tab-btn-rcmd" class="drawer-tab" data-dtab="rcmd" onclick="switchDrawer('rcmd')">&gt;_ qRcmd CONSOLE</button>
+            <button id="tab-btn-build" class="drawer-tab active" data-dtab="build" onclick="switchDrawer('build')">🔨 BUILD &amp; DIAGNOSTICS</button>
           </div>
-          <button class="hdr-btn close" onclick="toggleDrawer()" title="Hide Drawer">✕</button>
+          <button class="hdr-btn close" onclick="closeDrawer()" title="Hide Bottom Drawer">✕</button>
         </div>
         <div class="drawer-body">
-          <div id="dtab-debug" class="drawer-panel active">
-            <div class="debug-3col">
-              <div class="mini-box">
-                <div class="mini-hdr">
-                  <span>PC &amp; Raw (A7) Stack</span>
-                  <span style="display:flex;gap:2px;" title="qRcmd,exception mask Guru traps">
-                    <span class="bit-pill trap-on" onclick="this.classList.toggle('trap-on')">BUS#2</span>
-                    <span class="bit-pill trap-on" onclick="this.classList.toggle('trap-on')">ADR#3</span>
-                    <span class="bit-pill" onclick="this.classList.toggle('trap-on')">ILG#4</span>
-                  </span>
-                </div>
-                <div>▶ PC   = <span style="color:var(--metro-telemetry);">$0212C8</span> (draw_bobs+$4A · bobs.asm:285)</div>
-                <div>A7+00: <span style="color:#ddd;">$00021162</span> <span style="color:var(--text-dim);">(.main+$1C · H0+$0122)</span></div>
-                <div>A7+04: <span style="color:#ddd;">$00020814</span> <span style="color:var(--text-dim);">(_start+$24 · devharness)</span></div>
-                <div>A7+08: <span style="color:#ddd;">$00000001</span> <span style="color:var(--text-dim);">(raw stack word)</span></div>
-              </div>
-              <div class="mini-box">
-                <div class="mini-hdr">
-                  <span id="w-hdr-lbl">Typed Watches (.b/.w/.l/ptr)</span>
-                  <button class="w-fmt" onclick="toggleTraceBox(this)">TRACE (128)</button>
-                </div>
-                <div id="watches-body">
-                  <div class="watch-row"><span>xoffs1 ($021580) = <strong id="wval-0">$0140</strong></span><button class="w-fmt" onclick="cycleWatchFmt(0, this)">.w</button></div>
-                  <div class="watch-row"><span>bufs ($03E800)   = <strong id="wval-1">$0003E800</strong></span><button class="w-fmt" onclick="cycleWatchFmt(1, this)">ptr</button></div>
-                  <div class="watch-row"><span>BLTCON0 ($DFF040)= <strong id="wval-2">$3FCA [SNAP]</strong></span><button class="w-fmt" onclick="cycleWatchFmt(2, this)">.w</button></div>
-                </div>
-                <div id="trace-body" class="hidden">
-                  <div style="color:var(--metro-telemetry);">$0212C4  move.l ($00,a5,d4.w),d1   V:$08E H:$5E</div>
-                  <div style="color:var(--text-body);">$0212BE  move.l ($00,a4,d3.w),d0   V:$08E H:$54</div>
-                  <div style="color:var(--text-dim);">Ring: 128 instructions (qRcmd,history read)</div>
-                </div>
-              </div>
-              <div class="mini-box">
-                <div class="mini-hdr">
-                  <span>Amiberry GDB qRcmd Console</span>
-                  <span style="display:flex;gap:2px;">
-                    <button class="w-fmt" onclick="runMonitorPreset('execution-status')">status</button>
-                    <button class="w-fmt" onclick="runMonitorPreset('segments')">segs</button>
-                    <button class="w-fmt" onclick="runMonitorPreset('tasks')">tasks</button>
-                    <button class="w-fmt" onclick="runMonitorPreset('disasm 0212c8 3')">disasm</button>
-                  </span>
-                </div>
-                <div id="rsp-out" style="color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">→ {"execution":"stopped","debugger_stopped":true,"frame":412,"vpos":142,"hpos":100,"cycles":"29184420"}</div>
-                <div class="repl-row">
-                  <input id="rsp-cmd" class="repl-input" value="execution-status" onkeydown="if(event.key==='Enter')runMonitorCmd()" />
-                  <button class="tool-btn" onclick="runMonitorCmd()">SEND</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
+          <!-- MEMORY HEX (Full Bottom Width) -->
           <div id="dtab-mem" class="drawer-panel">
             <div class="ctrl-row" style="justify-content:space-between;margin-bottom:5px;">
               <div class="ctrl-row">
@@ -1099,7 +1140,7 @@
                 <button class="tool-btn active" onclick="jumpMem('$038200', 'COP1LC')">COP1LC</button>
                 <button class="tool-btn" onclick="jumpMem('$039800', 'BPL1PT')">BPL1PT</button>
                 <button class="tool-btn" onclick="jumpMem('$0212C8', 'PC')">PC</button>
-                <input id="hex-find-inp" class="mini-input" style="width:92px;" placeholder="🔍 Hex/ASCII" onkeydown="if(event.key==='Enter')findMemPattern()" />
+                <input id="hex-find-inp" class="mini-input" style="width:96px;" placeholder="🔍 Hex/ASCII" onkeydown="if(event.key==='Enter')findMemPattern()" />
               </div>
               <div class="ctrl-row">
                 <div class="seg-group">
@@ -1117,30 +1158,91 @@
             <div id="hex-dump"></div>
           </div>
 
-          <div id="dtab-build" class="drawer-panel">
-            <div class="log-line">vasmm68k_mot -Felf -m68000 -dwarf=3 effects/bobs.asm → obj/bobs.o</div>
-            <div class="log-line">m68k-amiga-elf-ld --emit-relocs -Ttext=0 -o out/bobs.elf obj/bobs.o</div>
-            <div class="log-line log-ok">elf2hunk out/bobs.elf out/bobs.exe — 0 errors, 0 warnings · qRcmd,process-break name bobs.exe armed</div>
-            <div class="log-line log-kpf">[guest-output #1] Trap 86: bobs: init_ytab=2048 entries, bobeja=50 copies @ $040C00</div>
+          <!-- TRACE 128 RING (Full Bottom Width) -->
+          <div id="dtab-trace" class="drawer-panel">
+            <div class="ctrl-row" style="justify-content:space-between;margin-bottom:5px;">
+              <span style="font-size:10px;color:var(--text-secondary);">Amiberry 128-Entry Executed Instruction Ring (<code>qRcmd,history read 20</code>)</span>
+              <span class="metro-badge live">HISTORY: ON</span>
+            </div>
+            <div class="log-line" style="color:var(--metro-telemetry);">  #0  F412 V$8E H$64  $0212C8  add.l   ($00,a5,d5.w),d1    D0=$0000004E  A0=$0003E800  A1=$00DFF040</div>
+            <div class="log-line">  #1  F412 V$8E H$5E  $0212C4  move.l  ($00,a5,d4.w),d1    D0=$0000004E  A0=$0003E800  A1=$00DFF040</div>
+            <div class="log-line">  #2  F412 V$8E H$54  $0212BE  move.l  ($00,a4,d2.w),d0    D0=$00000018  A0=$0003E800  A1=$00DFF040</div>
+            <div class="log-line" style="color:var(--text-dim);">  #3  F412 V$8E H$4A  $0212BA  dbf     d7,$000212be (T)    D7=$0000001F  SR=$2004</div>
+          </div>
+
+          <!-- LIVE qRcmd CONSOLE (Full Bottom Width) -->
+          <div id="dtab-rcmd" class="drawer-panel">
+            <div class="ctrl-row" style="justify-content:space-between;margin-bottom:4px;">
+              <span style="font-size:10px;color:var(--text-secondary);">Direct Amiberry 8.5.0 GDB Monitor (<code>qRcmd,&lt;hex&gt;</code>)</span>
+              <span class="ctrl-row">
+                <button class="w-fmt" onclick="runMonitorPreset('execution-status')">execution-status</button>
+                <button class="w-fmt" onclick="runMonitorPreset('segments')">segments</button>
+                <button class="w-fmt" onclick="runMonitorPreset('tasks')">tasks</button>
+                <button class="w-fmt" onclick="runMonitorPreset('disasm 0212c8 4')">disasm</button>
+                <button class="w-fmt" onclick="runMonitorPreset('exception last')">exception last</button>
+              </span>
+            </div>
+            <div id="rsp-out" style="padding:4px 6px;background:var(--surface-0);border:1px solid var(--border-subtle);color:var(--text-soft);font-size:10.5px;">→ {"execution":"stopped","debugger_stopped":true,"frame":412,"vpos":142,"hpos":100,"cycles":"29184420"}</div>
+            <div class="repl-row">
+              <input id="rsp-cmd" class="repl-input" value="execution-status" onkeydown="if(event.key==='Enter')runMonitorCmd()" />
+              <button class="tool-btn" onclick="runMonitorCmd()">SEND</button>
+            </div>
+          </div>
+
+          <!-- BUILD & DIAGNOSTICS / GUEST OUTPUT (Full Bottom Width) -->
+          <div id="dtab-build" class="drawer-panel active">
+            <div id="build-drawer-body" class="build-2col">
+              <div class="mini-box" id="build-log-box"></div>
+              <div class="mini-box" id="build-diags-box"></div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- ZONE 5: 26px Status Bar -->
+      <!-- ZONE 5: 26px Interactive Status Bar -->
       <footer class="status-bar">
         <div class="st-left">
           <span class="mode-pill" id="st-mode-pill">NORMAL</span>
           <span class="st-item" id="st-file"><strong>effects/bobs.asm</strong></span>
-          <span class="metro-badge live" id="st-lsp" style="height:18px;font-size:9px;">LSP: m68k-lsp ●</span>
-          <span class="metro-badge" id="st-rsp" style="height:18px;font-size:9px;">RSP :2345 ● PAUSED</span>
-          <span class="metro-badge" id="st-sel-cyc" style="height:18px;font-size:9px;" title="Line-by-line static sum over selected lines">SEL: 1 ln · 22(4/0) cyc</span>
+          <span class="metro-badge live st-click" id="st-lsp" onclick="showInfoBanner('LSP: m68k-lsp-server + clangd synced via .kajo-amiga/compile_commands.json')" title="Click for LSP info">LSP: m68k-lsp ●</span>
+          <span class="metro-badge hidden" id="st-rsp" style="height:18px;font-size:9px;">RSP :2345 ● PAUSED</span>
+          <span class="metro-badge st-click" id="st-sel-cyc" onclick="toggleCycleCol()" style="height:18px;font-size:9px;" title="Line-by-line cycle sum · Click to toggle 68k cycle gutter">⏱ SEL: 1 ln · 22(4/0) cyc</span>
+          <span class="metro-badge err st-click hidden" id="st-build-err" onclick="toggleBottomPanel()" style="height:18px;font-size:9px;" title="Click to toggle Build &amp; Diagnostics drawer">✗ 1 err · 1 warn</span>
         </div>
         <div class="st-right">
-          <span class="st-item" id="st-hunk">HUNK 0: <strong>$021040</strong></span>
-          <span class="st-item">CHIP: <strong>92 / 512 KB</strong></span>
-          <span class="st-item" id="st-pos">Ln 285, Col 5</span>
+          <span class="st-item st-click hidden" id="st-hunk" onclick="jumpMem('$021040','HUNK 0')">HUNK 0: <strong>$021040</strong></span>
+          <span class="st-item hidden" id="st-chip">CHIP: <strong>92 / 512 KB</strong></span>
+          <span class="st-item st-click" id="st-pos" onclick="showInfoBanner('Go to Line / Symbol (Ctrl+G)')" title="Click for Go to Line">Ln 285, Col 5</span>
         </div>
       </footer>
+    </div>
+  </div>
+
+  <!-- Edit-Mode Quick-Doc Modal (K over $DFFxxx while editing — NO permanent hardware pane!) -->
+  <div id="hrm-quick-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeHrmQuickModal()">
+    <div class="modal-card" style="width:540px;">
+      <div class="modal-hdr">
+        <span><span>📖</span> AMIGA HRM QUICK-DOC (K · Offline Reference)</span>
+        <button class="hdr-btn close" onclick="closeHrmQuickModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="md-h1">BLTCON0 ($DFF040) &amp; BLTCON1 ($DFF042) [WO]</div>
+        <p class="md-p">
+          Controls Blitter DMA channel enables (USEA..USED), barrel-shift distance (ASH/BSH), line/fill mode, and the 8-bit LF minterm truth table for <code>D = f(A, B, C)</code>.
+        </p>
+        <table class="md-table">
+          <thead><tr><th>Bits</th><th>Field</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>15–12</td><td>ASH</td><td>Source A right shift (0..15 pixels)</td></tr>
+            <tr><td>11–8</td><td>USEA..D</td><td>DMA channel enables (A, B, C, D)</td></tr>
+            <tr><td>7–0</td><td>LF Byte</td><td>Minterm logic function (e.g. $CA = cookie-cut)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-ftr">
+        <span style="font-size:10px;color:var(--text-secondary);">Press Esc or click outside to return cleanly to code</span>
+        <button class="hdr-btn primary" onclick="closeHrmQuickModal()">CLOSE</button>
+      </div>
     </div>
   </div>
 
@@ -1196,7 +1298,7 @@
           </div>
           <div>
             <div class="form-lbl" style="margin-bottom:4px;">PACKAGING TARGET</div>
-            <div class="seg-group">
+            <div class="seg-group" id="wiz-pkg-group">
               <button class="seg-btn active" onclick="pickModalSeg(this)">DH0: os_exe</button>
               <button class="seg-btn" onclick="pickModalSeg(this)">ADF DOS (ADFlib)</button>
               <button class="seg-btn" onclick="pickModalSeg(this)">ADF Raw</button>
@@ -1227,35 +1329,58 @@
     { ln: 285, addr:'0212C8', cyc:'22(4/0)',   minC:22, maxC:22, rd:4, wr:0, ops:'D2B5 5000', html: '    <span class="tok-op">add.l</span>   (<span class="tok-reg">a5</span>,<span class="tok-reg">d5</span>.w),<span class="tok-reg">d1</span>        <span class="tok-cmt">; total Y byte offset</span>' },
     { ln: 288, addr:'0212CC', cyc:'14(2/0)',   minC:14, maxC:14, rd:2, wr:0, ops:'3034 2000', html: '    <span class="tok-op">move.w</span>  (<span class="tok-reg">a4</span>,<span class="tok-reg">d2</span>.w),<span class="tok-reg">d0</span>        <span class="tok-cmt">; X1 (0..151)</span>' },
     { ln: 293, addr:'0212D4', cyc:'6+2n(1/0)', minC:6,  maxC:38, rd:1, wr:0, ops:'E848',      html: '    <span class="tok-op">lsr.w</span>   <span class="tok-reg">d4</span>,<span class="tok-reg">d0</span>             <span class="tok-cmt">; variable shift (6+2n cyc)</span>' },
-    { ln: 302, addr:'0212EE', cyc:'12(2/1)',   minC:12, maxC:12, rd:2, wr:1, ops:'3340 0002', html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,<span class="tok-num">2</span>(<span class="tok-reg">a1</span>)          <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'hrm\')">BLTCON1</span> = BSH</span>' },
-    { ln: 306, addr:'0212F4', cyc:'8(1/1)',    minC:8,  maxC:8,  rd:1, wr:1, ops:'3280',      html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,(<span class="tok-reg">a1</span>)           <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'hrm\')">BLTCON0</span> = #$3FCA</span>' },
-    { ln: 309, addr:'0212FE', cyc:'8(1/1)',    minC:8,  maxC:8,  rd:1, wr:1, ops:'3686',      html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d6</span>,(<span class="tok-reg">a3</span>)           <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'chips\')">BLTSIZE</span> = trigger!</span>' },
+    { ln: 302, addr:'0212EE', cyc:'12(2/1)',   minC:12, maxC:12, rd:2, wr:1, ops:'3340 0002', html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,<span class="tok-num">2</span>(<span class="tok-reg">a1</span>)          <span class="tok-cmt">; <span class="tok-hw" onclick="onHwTokenClick(event)">BLTCON1</span> = BSH</span>' },
+    { ln: 306, addr:'0212F4', cyc:'8(1/1)',    minC:8,  maxC:8,  rd:1, wr:1, ops:'3280',      html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,(<span class="tok-reg">a1</span>)           <span class="tok-cmt">; <span class="tok-hw" onclick="onHwTokenClick(event)">BLTCON0</span> = #$3FCA</span>' },
+    { ln: 309, addr:'0212FE', cyc:'8(1/1)',    minC:8,  maxC:8,  rd:1, wr:1, ops:'3686',      html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d6</span>,(<span class="tok-reg">a3</span>)           <span class="tok-cmt">; <span class="tok-hw" onclick="onHwTokenClick(event)">BLTSIZE</span> = trigger!</span>' },
+    { ln: 312, addr:'021304', cyc:'8(1/0)',    minC:8,  maxC:8,  rd:1, wr:0, ops:'4EB9 0000', errMsg:'✗ undef symbol cop_end', html: '    <span class="tok-op">lea</span>     cop_end(<span class="tok-reg">pc</span>),<span class="tok-reg">a2</span>    <span class="tok-cmt">; missing label test</span>' },
     { ln: 323, addr:'021308', cyc:'10/14',     minC:10, maxC:14, rd:2, wr:0, ops:'51CF FFB6', html: '    <span class="tok-op">dbf</span>     <span class="tok-reg">d7</span>,.bob           <span class="tok-cmt">; 10 taken / 14 exit</span>' }
   ];
 
-  // Emulates authentic WinUAE m68k_disasm_2 output parsed & enriched by amiga_disasm.c
   const disasmLines = [
     { ln: 0, addr:'0212BE', cyc:'18(3/0)',  minC:18, maxC:18, rd:3, wr:0, ops:'2235 4000', html:'<span class="tok-op">move.l</span>  ($00,<span class="tok-reg">a5</span>,<span class="tok-reg">d4</span>.w),<span class="tok-reg">d1</span> <span class="tok-ea">== $00042290</span>  <span class="tok-cmt">; H0+$027E</span>' },
     { ln: 1, addr:'0212C8', cyc:'22(4/0)',  minC:22, maxC:22, rd:4, wr:0, ops:'D2B5 5000', html:'<span class="tok-op">add.l</span>   ($00,<span class="tok-reg">a5</span>,<span class="tok-reg">d5</span>.w),<span class="tok-reg">d1</span> <span class="tok-ea">== $00042100</span>  <span class="tok-cmt">; ← PC</span>' },
     { ln: 2, addr:'0212CC', cyc:'14(2/0)',  minC:14, maxC:14, rd:2, wr:0, ops:'3034 2000', html:'<span class="tok-op">move.w</span>  ($00,<span class="tok-reg">a4</span>,<span class="tok-reg">d2</span>.w),<span class="tok-reg">d0</span> <span class="tok-ea">== $00028400</span>' },
-    { ln: 3, addr:'0212EE', cyc:'12(2/1)',  minC:12, maxC:12, rd:2, wr:1, ops:'3340 0002', html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,($0002,<span class="tok-reg">a1</span>) <span class="tok-ea">== $00dff042</span>     <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'hrm\')">BLTCON1</span></span>' },
-    { ln: 4, addr:'0212F4', cyc:'8(1/1)',   minC:8,  maxC:8,  rd:1, wr:1, ops:'3280',      html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,(<span class="tok-reg">a1</span>) <span class="tok-ea">== $00dff040</span>          <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'hrm\')">BLTCON0</span></span>' },
+    { ln: 3, addr:'0212EE', cyc:'12(2/1)',  minC:12, maxC:12, rd:2, wr:1, ops:'3340 0002', html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,($0002,<span class="tok-reg">a1</span>) <span class="tok-ea">== $00dff042</span>     <span class="tok-cmt">; <span class="tok-hw" onclick="onHwTokenClick(event)">BLTCON1</span></span>' },
+    { ln: 4, addr:'0212F4', cyc:'8(1/1)',   minC:8,  maxC:8,  rd:1, wr:1, ops:'3280',      html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,(<span class="tok-reg">a1</span>) <span class="tok-ea">== $00dff040</span>          <span class="tok-cmt">; <span class="tok-hw" onclick="onHwTokenClick(event)">BLTCON0</span></span>' },
     { ln: 5, addr:'0212F6', cyc:'20(3/0)',  minC:20, maxC:20, rd:3, wr:0, ops:'4EAE FF70', html:'<span class="tok-op">jsr</span>     (-$0090,<span class="tok-reg">a6</span>) <span class="tok-ea">== $00fc1280</span>     <span class="tok-cmt">; exec:_LVOForbid</span>' },
-    { ln: 6, addr:'0212FE', cyc:'8(1/1)',   minC:8,  maxC:8,  rd:1, wr:1, ops:'3686',      html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d6</span>,(<span class="tok-reg">a3</span>) <span class="tok-ea">== $00dff058</span>          <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'chips\')">BLTSIZE</span></span>' },
+    { ln: 6, addr:'0212FE', cyc:'8(1/1)',   minC:8,  maxC:8,  rd:1, wr:1, ops:'3686',      html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d6</span>,(<span class="tok-reg">a3</span>) <span class="tok-ea">== $00dff058</span>          <span class="tok-cmt">; <span class="tok-hw" onclick="onHwTokenClick(event)">BLTSIZE</span></span>' },
     { ln: 7, addr:'021308', cyc:'10/14',    minC:10, maxC:14, rd:2, wr:0, ops:'51CF FFB6', html:'<span class="tok-op">dbf</span>     <span class="tok-reg">d7</span>,$000212be (T)            <span class="tok-cmt">; loop -74B</span>' }
+  ];
+
+  const openTabs = [
+    { id:'bobs', label:'bobs.asm ●', active:true },
+    { id:'cop',  label:'copper.i',   active:false },
+    { id:'blt',  label:'blitter.c',  active:false }
   ];
 
   const breakpoints = new Set([284, 309]);
   const physBps = new Set(['0212FE']);
-  let selectedIdx = new Set([2, 3, 4]); // 3 lines selected by default to demonstrate sum
+  const unifiedBps = [
+    { id:'bp1', label:'bobs.asm:284  $0212C4', on:true, kind:'src', ln:284 },
+    { id:'bp2', label:'bobs.asm:309  $0212FE', on:true, kind:'src', ln:309 },
+    { id:'wp1', label:'Z2 $038200 (4B write)', on:true, kind:'mem', addr:'$038200' },
+    { id:'wp2', label:'dma-watch BLT $DFF058', on:false, kind:'mem', addr:'$0212FE' }
+  ];
+  const watchesList = [
+    { name:'xoffs1',  addr:'$021580', vals:{ '.w':'$0140', '.l':'$014000C0', 'ptr':'→ $000140' }, fmtIdx:0 },
+    { name:'bufs',    addr:'$03E800', vals:{ '.w':'$0003', '.l':'$0003E800', 'ptr':'$0003E800' }, fmtIdx:2 },
+    { name:'BLTCON0', addr:'$DFF040', vals:{ '.w':'$3FCA', '.l':'$3FCA3000', 'ptr':'$00DFF040' }, fmtIdx:0 }
+  ];
+  const watchFmts = ['.w', '.l', 'ptr'];
+
+  let selectedIdx = new Set([2, 3, 4]);
   let lastClickedIdx = 2;
   let srBits = { T:false, S:true, I:false, X:false, N:false, Z:false, V:false, C:false };
-  let sessionState = 'paused';
+  let scenario = 'edit';
   let centerView = 'source';
+  let sbTab = 'files';
+  let setupTabOpen = false;
   let showCycles = true;
   let stepIdx = 0;
+  let diagFilter = 'all';
+  let searchQuery = 'BLTCON0';
   let traceBlits = false;
-  let hexGroup = 2; // 1=8b, 2=16b, 4=32b
+  let hexGroup = 2;
   let curMemAddr = '$038200';
   let showGrid = false;
   let planeMask = [true, true, false, false];
@@ -1263,186 +1388,468 @@
   let copFilter = 'all';
   let copWatched = false;
   let dmaHires = false;
-  const watchFmts = ['.w', 'ptr', '.l'];
-  const watchSamples = [
-    { '.w':'$0140 (320)', '.b':'$01', '.l':'$014000C0', 'ptr':'→ $000140' },
-    { 'ptr':'$0003E800 (CHIP)', '.l':'$0003E800', '.w':'$0003', '.b':'$00' },
-    { '.w':'$3FCA [SNAP]', '.b':'$3F [SNAP]', '.l':'$3FCA3000', 'ptr':'$00DFF040' }
-  ];
+  let widthMode = 'full';
+  let halfView = 'code';
+  let runningSnapTaken = false;
+  let leftOpen = true;
+  let rightOpen = false;
+  let bottomOpen = false;
 
   function findStBtn(st) { return document.querySelector(`.demo-btn[data-st="${st}"]`); }
+  function el(id) { return document.getElementById(id); }
+  function show(id, on) { el(id).classList.toggle('hidden', !on); }
 
-  function setSessionState(st, btn) {
-    sessionState = st;
+  function onHwTokenClick(ev) {
+    ev.stopPropagation();
+    if (scenario === 'edit' || scenario === 'build_err') {
+      el('hrm-quick-modal').classList.remove('hidden');
+    } else {
+      rightOpen = true;
+      syncPanels();
+      switchInspector('hrm');
+    }
+  }
+  function closeHrmQuickModal() { el('hrm-quick-modal').classList.add('hidden'); }
+
+  function setScenario(st, btn) {
+    scenario = st;
+    runningSnapTaken = false;
     document.querySelectorAll('.demo-btn[data-st]').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
 
     const isWelcome = st === 'welcome';
-    const isIdle = st === 'idle';
-    const isRun = st === 'running';
-    const isAttach = st === 'attach';
+    const isEdit    = st === 'edit';
+    const isErr     = st === 'build_err';
+    const isSetup   = st === 'setup';
+    const isRun     = st === 'running';
+    const isPaused  = st === 'paused';
+    const isAttach  = st === 'attach';
+
+    setupTabOpen = isSetup;
     if (isAttach) centerView = 'disasm';
-    else if (centerView !== 'setup' && centerView !== 'disasm') centerView = 'source';
+    else if (isSetup) centerView = 'setup';
+    else centerView = 'source';
 
-    document.getElementById('welcome-view').classList.toggle('hidden', !isWelcome);
-    document.getElementById('left-sidebar').classList.toggle('hidden', isWelcome);
-    document.getElementById('editor-pane').classList.toggle('hidden', isWelcome);
-    document.getElementById('inspector-pane').classList.toggle('hidden', isWelcome);
-    document.getElementById('bottom-drawer').classList.toggle('hidden', isWelcome);
+    /* Auto-perspective defaults */
+    leftOpen = !isWelcome && widthMode !== '2-3' && widthMode !== '1-2';
+    rightOpen = isPaused || isAttach;
+    bottomOpen = isErr || isRun || isPaused || isAttach;
+    sbTab = (isPaused || isAttach) ? 'debug' : 'files';
 
-    document.getElementById('target-select').classList.toggle('hidden', isAttach || isWelcome);
-    document.getElementById('boot-mode-btn').classList.toggle('hidden', isAttach || isWelcome);
-    document.getElementById('btn-build').classList.toggle('hidden', isAttach || isWelcome);
-    document.getElementById('btn-run').classList.toggle('hidden', isAttach || isRun || isWelcome);
-    document.getElementById('btn-debug').classList.toggle('hidden', isAttach || isRun || st === 'paused' || isWelcome);
-    document.getElementById('btn-pause').classList.toggle('hidden', !isRun);
-    document.getElementById('btn-snap').classList.toggle('hidden', !isRun);
-    document.getElementById('btn-attach').classList.toggle('hidden', !(isIdle || isWelcome));
-    document.getElementById('btn-detach').classList.toggle('hidden', isIdle || isWelcome);
-    document.getElementById('btn-stop').classList.toggle('hidden', isIdle || isAttach || isWelcome);
-    document.getElementById('tab-btn-build').classList.toggle('hidden', isAttach);
-    if (isAttach && document.getElementById('dtab-build').classList.contains('active')) switchDrawer('debug');
+    /* Workspace views */
+    show('welcome-view', isWelcome);
+    show('editor-pane', !isWelcome);
 
-    const banner = document.getElementById('sys-banner');
-    const bTxt = document.getElementById('sys-banner-txt');
-    const bAct = document.getElementById('sys-banner-actions');
-    if (isWelcome) {
-      banner.className = 'sys-banner hidden';
-    } else if (isIdle) {
-      banner.className = 'sys-banner';
-      bTxt.textContent = '⚠ Session stopped · Toolchain check: vasmm68k_mot, m68k-amiga-elf-gcc, elf2hunk missing from PATH (ADFlib built-in). Configure via ⚙ Settings or attach to Amiberry.';
-      bAct.innerHTML = '<button class="tool-btn" onclick="setSessionState(\'attach\', findStBtn(\'attach\'))">🔌 ATTACH :2345</button>';
-    } else if (isRun) {
+    /* Left Header */
+    show('proj-menu-wrap', !isWelcome);
+    show('target-select', isEdit || isErr || isSetup || isRun || isPaused);
+    show('profile-select', isEdit || isErr || isSetup || isPaused);
+
+    /* Center Transport Cluster */
+    show('hdr-center', !isWelcome);
+    show('tc-offline', isEdit || isErr || isSetup);
+    show('tc-live', isRun || isPaused || isAttach);
+
+    el('btn-play-pause').textContent = isRun ? '⏸' : '▶';
+    el('btn-play-pause').className = isRun ? 'hdr-btn warn' : 'hdr-btn run';
+    el('btn-step-over').disabled = isRun;
+    el('btn-step-into').disabled = isRun;
+    el('btn-step-out').disabled  = isRun;
+    show('btn-restart', isRun || isPaused);
+    show('btn-snap', isRun || isAttach);
+    show('btn-stop', isRun || isPaused);
+    el('btn-detach').textContent = isAttach ? '🔌 DETACH' : '🔌';
+
+    const pill = el('rsp-pill');
+    if (isRun) { pill.className = 'metro-badge live'; pill.textContent = '● 50 FPS'; }
+    else if (isPaused) { pill.className = 'metro-badge warn'; pill.textContent = '● PAUSED :2345'; }
+    else if (isAttach) { pill.className = 'metro-badge mag'; pill.textContent = '● ATTACHED :2345 EXT'; }
+
+    /* Right Layout Toggles */
+    show('btn-panel-left', !isWelcome);
+    show('btn-panel-bottom', !isWelcome);
+    show('btn-panel-right', isPaused || isAttach);
+    show('hdr-win-sep', !isWelcome);
+
+    /* Sidebar Tabs */
+    el('left-sidebar').classList.toggle('debug-wide', isPaused || isAttach);
+    show('sb-tab-dbg', isPaused || isAttach);
+    show('sb-tab-files', !isAttach);
+    show('sb-tab-search', isEdit || isErr || isSetup || isRun || isPaused);
+    show('sb-tab-tasks', isAttach);
+
+    /* Center Ribbon */
+    show('src-dis-seg', isPaused);
+    show('step-gran-pill', isPaused || isAttach);
+    show('btn-open-setup', !isAttach && !isSetup);
+
+    /* Honest Banner */
+    const banner = el('sys-banner');
+    if (isRun) {
       banner.className = 'sys-banner info';
-      bTxt.textContent = '▶ Amiberry running at 50 FPS · Zero background RSP polling (<0.05% CPU). Click ↻ SNAPSHOT or ⏸ PAUSE to read m dff000,200 + Chip RAM.';
-      bAct.innerHTML = '<button class="tool-btn" onclick="takeSnapshot()">↻ SNAPSHOT NOW</button>';
+      el('sys-banner-txt').textContent = '▶ Amiberry running at 50 FPS · Zero background RSP polling (<0.05% CPU). Click ↻ SNAP for a 1-frame capture or ⏸.';
+      el('sys-banner-actions').innerHTML =
+        '<button class="tool-btn" onclick="setScenario(\'paused\', findStBtn(\'paused\'))">⏸ PAUSE F6</button> ' +
+        '<button class="tool-btn" onclick="takeSnapshot()">↻ SNAPSHOT</button>';
     } else if (isAttach) {
-      banner.className = 'sys-banner info';
-      bTxt.textContent = '🔌 ATTACH MODE (owns_amiberry=false) on 127.0.0.1:2345 · D detaches cleanly (clears Kajo BPs, resumes Amiberry).';
-      bAct.innerHTML = '<button class="tool-btn" onclick="scanCopper()">🔎 SCAN COPPER</button>';
+      banner.className = 'sys-banner mag';
+      el('sys-banner-txt').textContent = '🔌 ATTACH MODE (owns_amiberry=false) on 127.0.0.1:2345 · Detach removes Kajo BPs & resumes Amiberry without killing it.';
+      el('sys-banner-actions').innerHTML = '<button class="tool-btn" onclick="scanCopper()">🔎 SCAN COPPER</button>';
     } else {
       banner.className = 'sys-banner hidden';
     }
 
-    document.getElementById('cpu-strip').classList.toggle('hidden', isIdle || isRun || isWelcome);
-    const pill = document.getElementById('rsp-pill');
-    if (isWelcome) { pill.className = 'metro-badge dim'; pill.textContent = 'NO WORKSPACE'; }
-    else if (isIdle) { pill.className = 'metro-badge dim'; pill.textContent = 'AMIBERRY STOPPED · IDLE'; }
-    else if (isRun) { pill.className = 'metro-badge live'; pill.textContent = 'AMIBERRY 50 FPS ● RUNNING'; }
-    else if (isAttach) { pill.className = 'metro-badge mag'; pill.textContent = 'ATTACHED :2345 ● NO SOURCE'; }
-    else { pill.className = 'metro-badge warn'; pill.textContent = 'AMIBERRY :2345 ● PAUSED'; }
+    /* Bottom Drawer Tabs */
+    show('tab-btn-mem', isPaused || isAttach);
+    show('tab-btn-trace', isPaused || isAttach);
+    show('tab-btn-rcmd', isPaused || isAttach);
+    show('tab-btn-build', isEdit || isErr || isSetup || isRun || isPaused);
+    el('tab-btn-build').textContent = isErr ? '🔨 BUILD & DIAGNOSTICS (1 ERR)'
+      : (isRun || isPaused) ? '🔨 BUILD & GUEST OUTPUT' : '🔨 BUILD & DIAGNOSTICS';
+    if (isErr || isRun || isEdit || isSetup) switchDrawer('build');
+    else if (isPaused || isAttach) switchDrawer('mem');
+    renderBuildDrawer();
 
-    document.getElementById('st-mode-pill').textContent = isWelcome ? 'WELCOME' : (isAttach ? 'DISASM' : 'NORMAL');
-    document.getElementById('st-rsp').textContent = (isIdle || isWelcome) ? 'RSP: CLOSED' : (isRun ? 'RSP: RUNNING (QUIET)' : 'RSP :2345 ● PAUSED');
-    document.getElementById('st-lsp').classList.toggle('hidden', isAttach || isWelcome);
-    document.getElementById('st-sel-cyc').classList.toggle('hidden', isWelcome);
-    document.getElementById('st-hunk').classList.toggle('hidden', isWelcome);
-    document.getElementById('st-file').innerHTML = isWelcome ? '<strong>Start Screen</strong>' : (isAttach ? '<strong>$0212C8 (Live Process)</strong>' : `<strong>${document.getElementById('target-select').selectedOptions[0].text}</strong>`);
+    /* Status Bar */
+    const mp = el('st-mode-pill');
+    mp.className = 'mode-pill' + (isRun ? ' running' : isPaused ? ' paused' : isAttach ? ' attach' : '');
+    mp.textContent = isWelcome ? 'WELCOME' : isSetup ? 'SETUP' : isRun ? 'RUNNING' : isPaused ? 'PAUSED' : isAttach ? 'ATTACH' : 'NORMAL';
 
+    show('st-lsp', isEdit || isErr || isRun || isPaused);
+    show('st-rsp', isRun || isPaused || isAttach);
+    if (isRun) el('st-rsp').textContent = 'RSP: RUNNING (QUIET)';
+    else if (isPaused || isAttach) el('st-rsp').textContent = 'RSP :2345 ● PAUSED';
+
+    show('st-sel-cyc', isEdit || isErr || isPaused);
+    show('st-build-err', isErr);
+    show('st-hunk', isRun || isPaused || isAttach);
+    show('st-chip', isPaused || isAttach);
+    el('st-file').innerHTML = isWelcome ? '<strong>Start Screen</strong>'
+      : isSetup ? '<strong>kajo-amiga.toml</strong>'
+      : isAttach ? '<strong>$0212C8 (demo.exe · Live)</strong>'
+      : '<strong>effects/bobs.asm</strong>';
+
+    syncPanels();
     if (!isWelcome) {
-      renderLeftSidebar();
+      switchSidebarTab(sbTab);
       renderCenter();
-      renderCpu();
+    }
+    syncHalfScreenUI();
+  }
+
+  function syncPanels() {
+    const inWs = scenario !== 'welcome';
+    show('left-sidebar', inWs && leftOpen);
+    show('inspector-pane', inWs && rightOpen);
+    show('bottom-drawer', inWs && bottomOpen);
+    el('btn-panel-left').classList.toggle('active', leftOpen);
+    el('btn-panel-bottom').classList.toggle('active', bottomOpen);
+    el('btn-panel-right').classList.toggle('active', rightOpen);
+  }
+  function toggleLeftPanel()   { leftOpen = !leftOpen; syncPanels(); }
+  function toggleBottomPanel() { bottomOpen = !bottomOpen; syncPanels(); }
+  function toggleRightPanel()  { rightOpen = !rightOpen; syncPanels(); }
+  function togglePlayPause()   { setScenario(scenario === 'running' ? 'paused' : 'running', findStBtn(scenario === 'running' ? 'paused' : 'running')); }
+
+  function renderBuildDrawer() {
+    const isErr = scenario === 'build_err';
+    const isRun = scenario === 'running';
+    if (isErr) {
+      el('build-log-box').innerHTML = `
+        <div class="mini-hdr"><span>vasmm68k_mot — Option D DAG Build</span><span class="metro-badge err">FAILED (exit 1)</span></div>
+        <div class="log-line">vasmm68k_mot -Felf -m68000 -dwarf=3 effects/bobs.asm -o obj/bobs.o</div>
+        <div class="log-line" style="color:var(--metro-urgent-text);">error 2012 in line 312 of "effects/bobs.asm": undefined symbol &lt;cop_end&gt;</div>
+        <div class="log-line" style="color:var(--metro-warning);">warning 1007 in line 284 of "effects/bobs.asm": word alignment padding inserted</div>`;
+      const showErr = diagFilter === 'all' || diagFilter === 'err';
+      const showWrn = diagFilter === 'all' || diagFilter === 'wrn';
+      el('build-diags-box').innerHTML = `
+        <div class="mini-hdr">
+          <span>Diagnostics</span>
+          <span style="display:flex;gap:3px;">
+            <button class="w-fmt" onclick="diagFilter='all';renderBuildDrawer()">All (2)</button>
+            <button class="w-fmt" onclick="diagFilter='err';renderBuildDrawer()">Errors (1)</button>
+            <button class="w-fmt" onclick="diagFilter='wrn';renderBuildDrawer()">Warnings (1)</button>
+            <button class="w-fmt" onclick="focusErrLine()" title="Next Diagnostic (F8)">↓ F8</button>
+          </span>
+        </div>
+        ${showErr ? `<div class="diag-row" onclick="focusErrLine()"><span><strong>effects/bobs.asm:312</strong> · undefined symbol 'cop_end'</span><span class="git-e">ERR</span></div>` : ''}
+        ${showWrn ? `<div class="diag-row warn" onclick="selectCodeRow(1, null)"><span><strong>effects/bobs.asm:284</strong> · word alignment padding</span><span class="git-m">WRN</span></div>` : ''}`;
+    } else if (isRun) {
+      el('build-log-box').innerHTML = `
+        <div class="mini-hdr"><span>Build Artifacts (Cached)</span><span class="metro-badge live">UP-TO-DATE</span></div>
+        <div class="log-line log-ok">✓ elf2hunk out/bobs.elf out/bobs.exe · staged DH0:s/startup-sequence</div>
+        <div class="log-line">amiberry --model a500 -s debugging_features=segtracker,gdbserver -s gdb_port=2345</div>`;
+      el('build-diags-box').innerHTML = `
+        <div class="mini-hdr"><span>Guest Output (qRcmd,guest-output Trap 86)</span><span class="metro-badge live">LIVE</span></div>
+        <div class="log-line log-kpf">[guest #1] bobs: init_ytab=2048 entries @ $042000</div>
+        <div class="log-line log-kpf">[guest #2] bobs: copper=$038200 bpl0=$039800 (PAL 50Hz)</div>`;
+    } else {
+      el('build-log-box').innerHTML = `
+        <div class="mini-hdr"><span>Option D Build Output</span><span class="metro-badge live">0 ERRORS</span></div>
+        <div class="log-line">vasmm68k_mot -Felf -m68000 -dwarf=3 effects/bobs.asm → obj/bobs.o</div>
+        <div class="log-line log-ok">elf2hunk out/bobs.elf out/bobs.exe · ready</div>`;
+      el('build-diags-box').innerHTML = `
+        <div class="mini-hdr"><span>Guest Output (Trap 86)</span><span class="metro-badge dim">IDLE</span></div>
+        <div class="log-line" style="color:var(--text-dim);">No build diagnostics.</div>`;
     }
   }
+
+  function focusErrLine() { selectedIdx = new Set([8]); renderCenter(); }
+
+  /* Left Sidebar Rendering */
+  function switchSidebarTab(tab) {
+    sbTab = tab;
+    el('sb-tab-dbg').classList.toggle('active', tab === 'debug');
+    el('sb-tab-files').classList.toggle('active', tab === 'files');
+    el('sb-tab-search').classList.toggle('active', tab === 'search');
+    el('sb-tab-tasks').classList.toggle('active', tab === 'tasks');
+    renderLeftSidebar();
+  }
+
+  function toggleDbgSec(hdr) { hdr.parentElement.classList.toggle('collapsed'); }
 
   function renderLeftSidebar() {
-    const body = document.getElementById('left-tree-body');
-    const hunk = document.getElementById('left-hunk-panel');
-    if (sessionState === 'attach') {
-      document.getElementById('left-hdr-lbl').textContent = 'TASKS & SEGS';
-      body.innerHTML = `
+    const box = el('left-sb-body');
+    const isErr = scenario === 'build_err';
+
+    if (sbTab === 'debug') {
+      const dVals = ['0000004E', stepIdx % 2 ? '00000A16' : '00000840', '000005A0', '000001E0', '00000410', '000002F0', '000003C2', '0000001F'];
+      const aVals = ['0003E800','00DFF040','00DFF048','00DFF058','00028400','00042000','00F80000','0007FE00'];
+      const srHtml = Object.keys(srBits).map(b =>
+        `<span class="sr-bit ${srBits[b]?'set':''}" onclick="toggleSrBit('${b}')">${b}</span>`).join('');
+      let regRows = '';
+      for (let i = 0; i < 8; i++) {
+        const dChg = i === 1 && stepIdx > 0;
+        regRows += `
+          <div class="reg-cell ${dChg?'changed':''}" onclick="el('code-hover-txt').textContent='D${i}=$${dVals[i]} · click/double-click to edit via G'">
+            <span class="reg-name">D${i}</span><span class="reg-val">${dVals[i]}</span>
+          </div>
+          <div class="reg-cell" onclick="jumpMem('$${aVals[i].slice(-6)}','A${i}')">
+            <span class="reg-name">A${i}</span><span class="reg-val">${aVals[i]}</span>
+          </div>`;
+      }
+
+      const watchesHtml = watchesList.map((w, idx) => {
+        const f = watchFmts[w.fmtIdx];
+        return `<div class="sb-item-row">
+          <span>${w.name} <strong style="color:#fff;">${w.vals[f]}</strong></span>
+          <button class="w-fmt" onclick="cycleWatchFmt(${idx})">${f}</button>
+        </div>`;
+      }).join('');
+
+      const bpsHtml = unifiedBps.map((b, i) => `
+        <div class="sb-item-row" onclick="${b.kind==='src' ? `selectCodeRow(${b.ln===284?1:7},null)` : `jumpMem('${b.addr}','WP')`}">
+          <label class="bp-check-lbl" onclick="event.stopPropagation()">
+            <input type="checkbox" ${b.on?'checked':''} onchange="unifiedBps[${i}].on=this.checked" />
+            <span style="${b.on?'':'color:var(--text-dim);text-decoration:line-through;'}">${b.label}</span>
+          </label>
+        </div>`).join('');
+
+      const bottomSec = scenario === 'attach'
+        ? `<div class="dbg-sec">
+            <div class="dbg-sec-hdr" onclick="toggleDbgSec(this)"><span>▾ TASKS &amp; SEGMENTS</span><span style="color:var(--text-dim);">qRcmd</span></div>
+            <div class="dbg-sec-body">
+              <div class="sb-item-row" onclick="setCenterView('disasm')"><span>⚙ demo.exe</span><span class="hunk-name">CUR</span></div>
+              <div class="sb-item-row" onclick="jumpMem('$021040','Seg 0 .CODE')"><span class="hunk-name">Seg0 .CODE</span><span>$021040 ↗</span></div>
+              <div class="sb-item-row" onclick="jumpMem('$038200','Seg 1 .CHIP')"><span class="hunk-name">Seg1 .CHIP</span><span>$038200 ↗</span></div>
+              <div class="sb-item-row" onclick="jumpMem('$000000','Chip RAM')"><span>Chip 512K</span><span>$000000 ↗</span></div>
+            </div>
+          </div>`
+        : `<div class="dbg-sec">
+            <div class="dbg-sec-hdr" onclick="toggleDbgSec(this)"><span>▾ RELOCATED HUNKS</span><span style="color:var(--text-dim);">bobs.exe</span></div>
+            <div class="dbg-sec-body">
+              <div class="sb-item-row" onclick="jumpMem('$021040','H0 .CODE')"><span class="hunk-name">H0 .CODE</span><span>$021040 ↗</span></div>
+              <div class="sb-item-row" onclick="jumpMem('$038200','H1 .CHIP')"><span class="hunk-name">H1 .CHIP</span><span>$038200 ↗</span></div>
+            </div>
+          </div>`;
+
+      box.innerHTML = `
+        <div class="dbg-sec">
+          <div class="dbg-sec-hdr" onclick="toggleDbgSec(this)">
+            <span>▾ CPU 68000</span>
+            <span style="color:var(--metro-telemetry);">F412 V$8E H$64 +22c</span>
+          </div>
+          <div class="dbg-sec-body">
+            <div class="cpu-pc-row">
+              <span><strong style="color:#ffb84d;">PC</strong> <span style="color:var(--metro-telemetry);">$000212C8</span></span>
+              <span style="display:flex;gap:3px;">
+                <button class="w-fmt" onclick="runMonitorPreset('checkpoint save /tmp/cp.uss')" title="Save .uss checkpoint">💾CP</button>
+                <button class="w-fmt" onclick="runMonitorPreset('checkpoint restore /tmp/cp.uss')" title="Restore .uss checkpoint">⏮CP</button>
+              </span>
+            </div>
+            <div class="sr-strip" title="Click bit to toggle SR via G packet">${srHtml}</div>
+            <div class="reg-grid-2col">${regRows}</div>
+          </div>
+        </div>
+        <div class="dbg-sec">
+          <div class="dbg-sec-hdr" onclick="toggleDbgSec(this)">
+            <span>▾ STACK (A7)</span>
+            <span style="display:flex;gap:2px;" onclick="event.stopPropagation()" title="Guru Exception Traps">
+              <span class="bit-pill trap-on" onclick="this.classList.toggle('trap-on')">BUS</span>
+              <span class="bit-pill trap-on" onclick="this.classList.toggle('trap-on')">ADR</span>
+              <span class="bit-pill" onclick="this.classList.toggle('trap-on')">ILG</span>
+            </span>
+          </div>
+          <div class="dbg-sec-body">
+            <div class="sb-item-row" onclick="setCenterView('disasm')"><span>▶ $0212C8</span><span style="color:var(--text-dim);">draw_bobs+4A</span></div>
+            <div class="sb-item-row" onclick="jumpMem('$021162','A7+0')"><span>+0 $021162</span><span style="color:var(--text-dim);">.main+1C</span></div>
+            <div class="sb-item-row" onclick="jumpMem('$020814','A7+4')"><span>+4 $020814</span><span style="color:var(--text-dim);">_start+24</span></div>
+          </div>
+        </div>
+        <div class="dbg-sec">
+          <div class="dbg-sec-hdr" onclick="toggleDbgSec(this)">
+            <span>▾ WATCHES (${watchesList.length})</span>
+            <button class="w-fmt" onclick="event.stopPropagation();promptAddWatch()">+ ADD</button>
+          </div>
+          <div class="dbg-sec-body">${watchesHtml}</div>
+        </div>
+        <div class="dbg-sec">
+          <div class="dbg-sec-hdr" onclick="toggleDbgSec(this)"><span>▾ BREAKPOINTS (${unifiedBps.length})</span><span style="color:var(--text-dim);">Z0 / Z2</span></div>
+          <div class="dbg-sec-body">${bpsHtml}</div>
+        </div>
+        ${bottomSec}`;
+      return;
+    }
+
+    if (sbTab === 'search') {
+      box.innerHTML = `
+        <div style="padding:6px 8px;display:flex;gap:4px;">
+          <input class="mini-input" style="flex:1;" value="${searchQuery}" oninput="searchQuery=this.value" placeholder="rg workspace search…" />
+          <button class="tool-btn">GO</button>
+        </div>
+        <div class="tree-cat">Matches in workspace (3)</div>
+        <div class="search-hit" onclick="setScenario('edit',findStBtn('edit'));selectCodeRow(6,null)">
+          <div style="color:var(--metro-telemetry);">effects/bobs.asm:306</div>
+          <div style="color:var(--text-soft);">move.w d0,(a1) ; <strong>BLTCON0</strong> = #$3FCA</div>
+        </div>
+        <div class="search-hit" onclick="setScenario('edit',findStBtn('edit'));selectCodeRow(5,null)">
+          <div style="color:var(--metro-telemetry);">effects/bobs.asm:302</div>
+          <div style="color:var(--text-soft);">move.w d0,2(a1) ; BLTCON1 = BSH</div>
+        </div>
+        <div class="search-hit" onclick="setScenario('edit',findStBtn('edit'));selectCodeRow(7,null)">
+          <div style="color:var(--metro-telemetry);">effects/bobs.asm:309</div>
+          <div style="color:var(--text-soft);">move.w d6,(a3) ; BLTSIZE trigger</div>
+        </div>`;
+      return;
+    }
+
+    if (sbTab === 'tasks') {
+      box.innerHTML = `
         <div class="tree-cat">qRcmd,tasks (Exec)</div>
         <div class="tree-row active" onclick="setCenterView('disasm')"><span>⚙ demo.exe</span><span class="hunk-name">SP $07FE00</span></div>
-        <div class="tree-row"><span>⚙ dos.library</span><span class="hunk-addr">WAIT</span></div>
-        <div class="tree-row"><span>⚙ input.device</span><span class="hunk-addr">WAIT</span></div>
+        <div class="tree-row"><span>⚙ dos.library</span><span style="color:var(--text-dim);">WAIT</span></div>
+        <div class="tree-row"><span>⚙ input.device</span><span style="color:var(--text-dim);">WAIT</span></div>
+        <div class="tree-cat">qRcmd,segments</div>
+        <div class="tree-row" onclick="jumpMem('$021040','Seg 0 .CODE')"><span class="hunk-name">Seg 0 .CODE</span><span>$021040</span></div>
+        <div class="tree-row" onclick="jumpMem('$038200','Seg 1 .CHIP')"><span class="hunk-name">Seg 1 .CHIP</span><span>$038200</span></div>
         <div class="tree-cat">qXfer:memory-map:read</div>
-        <div class="tree-row" onclick="jumpMem('$038200','Chip RAM')"><span>🧠 Chip RAM</span><span>512 KB</span></div>
-        <div class="tree-row" onclick="jumpMem('$F80000','Kickstart ROM')"><span>📘 Kick 1.3</span><span>$F80000</span></div>`;
-      hunk.innerHTML = `
-        <div class="tree-cat" style="padding:0;">qRcmd,segments</div>
-        <div class="hunk-row" onclick="jumpMem('$021040','Seg 0 .text')"><span class="hunk-name">Seg 0 .CODE</span><span>$021040</span></div>
-        <div class="hunk-row" onclick="jumpMem('$038200','Seg 1 .CHIP')"><span class="hunk-name">Seg 1 .CHIP</span><span>$038200</span></div>`;
+        <div class="tree-row" onclick="jumpMem('$000000','Chip RAM')"><span>🧠 Chip RAM</span><span>512 KB</span></div>
+        <div class="tree-row" onclick="jumpMem('$F80000','Kickstart')"><span>📘 Kick 1.3</span><span>$F80000</span></div>`;
+      return;
+    }
+
+    /* FILES + OUTLINE (kept visible even during Setup so paths remain readable!) */
+    box.innerHTML = `
+      <div class="tree-cat"><span>effects/</span><span>[Option D]</span></div>
+      <div class="tree-row ${!setupTabOpen?'active':''}" onclick="activateTab('bobs')"><span>📄 bobs.asm</span><span class="${isErr?'git-e':'git-m'}">${isErr?'1E':'M'}</span></div>
+      <div class="tree-row" onclick="activateTab('cop')"><span>📄 copper.i</span></div>
+      <div class="tree-row" onclick="activateTab('blt')"><span>📄 blitter.c</span></div>
+      <div class="tree-cat"><span>data/</span></div>
+      <div class="tree-row"><span>▤ font.raw</span></div>
+      <div class="tree-row"><span>🖼 bobs.png</span></div>
+      <div class="tree-row ${setupTabOpen?'active':''}" onclick="setScenario('setup', findStBtn('setup'))"><span>⚙ kajo-amiga.toml</span></div>
+      <div class="tree-cat"><span>Outline (Space f s)</span></div>
+      <div class="tree-row" onclick="selectCodeRow(0,null)"><span>SEC code</span><span class="hunk-name">:1</span></div>
+      <div class="tree-row" onclick="selectCodeRow(0,null)"><span>LBL .bob</span><span class="hunk-name">:282</span></div>
+      <div class="tree-row" onclick="selectCodeRow(6,null)"><span>EQU BLTCON0</span><span class="hunk-name">:$040</span></div>`;
+  }
+
+  function promptAddWatch() {
+    watchesList.push({ name:'COLOR00', addr:'$DFF180', vals:{ '.w':'$0002', '.l':'$00020FFF', 'ptr':'$00DFF180' }, fmtIdx:0 });
+    renderLeftSidebar();
+  }
+  function cycleWatchFmt(idx) {
+    watchesList[idx].fmtIdx = (watchesList[idx].fmtIdx + 1) % watchFmts.length;
+    renderLeftSidebar();
+  }
+
+  function activateTab(id) {
+    openTabs.forEach(t => t.active = (t.id === id));
+    if (scenario === 'setup') {
+      setScenario('edit', findStBtn('edit'));
     } else {
-      document.getElementById('left-hdr-lbl').textContent = 'WORKSPACE';
-      body.innerHTML = `
-        <div class="tree-cat">effects/</div>
-        <div class="tree-row active" onclick="setCenterView('source')"><span>📄 bobs.asm</span><span class="git-m">M</span></div>
-        <div class="tree-row" onclick="changeTarget('gouraud')"><span>📄 gouraud.asm</span></div>
-        <div class="tree-row" onclick="changeTarget('cube')"><span>📄 cube.asm</span></div>
-        <div class="tree-row" onclick="changeTarget('copper_test')"><span>📄 copper_test.asm</span></div>
-        <div class="tree-cat">Outline (Space f s)</div>
-        <div class="tree-row" onclick="jumpMem('$0212BE','.bob loop')"><span>λ .bob</span><span class="hunk-name">L282</span></div>
-        <div class="tree-row" onclick="switchInspector('copper')"><span>⚡ cop_list</span><span class="hunk-name">CHIP</span></div>
-        <div class="tree-row" onclick="switchInspector('hrm')"><span>📖 blitter.md</span></div>`;
-      hunk.innerHTML = `
-        <div class="tree-cat" style="padding:0;">qRcmd,segments (bobs.exe)</div>
-        <div class="hunk-row" onclick="jumpMem('$021040','HUNK 0 .text')"><span class="hunk-name">H0 .text</span><span>$021040</span></div>
-        <div class="hunk-row" onclick="jumpMem('$038200','HUNK 1 .CHIP')"><span class="hunk-name">H1 .CHIP</span><span>$038200</span></div>`;
+      renderCenter();
     }
   }
 
-  function renderCpu() {
-    const dVals = ['0000004E', stepIdx % 2 ? '00000A16' : '00000840', '05A0', '01E0', '0410', '02F0', '03C2', '001F'];
-    document.getElementById('cpu-row-d').innerHTML = dVals.map((v, i) => {
-      const n = parseInt(v, 16);
-      const tip = `D${i}: $${v} | dec=${n} | bin=${(n&0xff).toString(2).padStart(8,'0')} (click to jump/edit via G)`;
-      return `<div class="reg-chip ${i === 1 && stepIdx > 0 ? 'changed' : ''}" title="${tip}" onclick="document.getElementById('code-hover-txt').textContent='${tip}'"><span class="reg-name">D${i}</span><span class="reg-val">${v}</span></div>`;
-    }).join('') + `<div class="sr-strip" title="Click bit to toggle SR via G packet">` +
-      Object.keys(srBits).map(b => `<span class="sr-bit ${srBits[b]?'set':''}" onclick="toggleSrBit('${b}')">${b}</span>`).join('') + `</div>`;
-    const aVals = [['A0','0003E800'],['A1','00DFF040'],['A2','00DFF048'],['A3','00DFF058'],['A5','00042000'],['A7','0007FE00'],['PC','0212C8']];
-    document.getElementById('cpu-row-a').innerHTML = aVals.map(([k,v]) =>
-      `<div class="reg-chip ${k==='PC'?'changed':''}" title="Click to inspect ${k}=$${v} in Memory Hex" onclick="jumpMem('$${v.slice(-6)}','${k}')"><span class="reg-name">${k}</span><span class="reg-val">${v}</span></div>`
-    ).join('');
+  function closeSetupTab(ev) {
+    ev.stopPropagation();
+    setScenario('edit', findStBtn('edit'));
   }
-  function toggleSrBit(b) { srBits[b] = !srBits[b]; renderCpu(); }
+
+  function toggleSrBit(b) { srBits[b] = !srBits[b]; renderLeftSidebar(); }
 
   function renderCenter() {
-    const isSet = centerView === 'setup';
-    const isDis = centerView === 'disasm';
-    document.getElementById('btn-view-src').classList.toggle('active', centerView === 'source');
-    document.getElementById('btn-view-dis').classList.toggle('active', isDis);
-    document.getElementById('btn-view-set').classList.toggle('active', isSet);
-    document.getElementById('disasm-bar').classList.toggle('hidden', !isDis);
-    document.getElementById('code-hint-bar').classList.toggle('hidden', isSet);
-    document.getElementById('code-view').classList.toggle('hidden', isSet);
-    document.getElementById('project-setup-view').classList.toggle('hidden', !isSet);
-    document.getElementById('disasm-src-badge').classList.toggle('hidden', isSet);
-    document.getElementById('disasm-src-badge').textContent =
-      isDis ? 'qRcmd,disasm · M68K' : 'm68k+c · K:HRM';
+    const isSet = scenario === 'setup';
+    const isDis = centerView === 'disasm' || scenario === 'attach';
+    const isPausedOrAttach = scenario === 'paused' || scenario === 'attach';
+    const isErr = scenario === 'build_err';
 
-    const tabsEl = document.getElementById('center-tabs');
-    tabsEl.innerHTML = sessionState === 'attach'
-      ? `<div class="tab-pill ${isDis?'active':''}" onclick="setCenterView('disasm')">[DISASM] $0212C8</div><div class="tab-pill" onclick="switchInspector('copper')">[CHIP] $038200</div>`
-      : `<div class="tab-pill ${centerView==='source'?'active':''}" onclick="setCenterView('source')">[1] bobs.asm ●</div><div class="tab-pill ${isDis?'active':''}" onclick="setCenterView('disasm')">[DISASM]</div><div class="tab-pill ${isSet?'active':''}" onclick="setCenterView('setup')">⚙ kajo-amiga.toml</div>`;
+    el('btn-view-src').classList.toggle('active', !isDis);
+    el('btn-view-dis').classList.toggle('active', isDis);
+    el('step-gran-pill').textContent = isDis ? 'STEP: INSN' : 'STEP: LINE';
+    el('disasm-bar').classList.toggle('hidden', !isDis || isSet);
+    el('code-hint-bar').classList.toggle('hidden', isSet);
+    el('code-view').classList.toggle('hidden', isSet);
+    el('project-setup-view').classList.toggle('hidden', !isSet);
+    el('disasm-src-badge').textContent = isDis ? 'qRcmd,disasm · M68K' : 'm68k+c · K:HRM';
+    el('code-hint-right').textContent = isPausedOrAttach ? '● BP · Ctrl+F10 Run→Cur · Alt+D Disasm' : 'Click gutter: BP (F9) · Ctrl+P: Quick Open';
+
+    const tabsEl = el('center-tabs');
+    if (scenario === 'attach') {
+      tabsEl.innerHTML = `<div class="tab-pill active">[DISASM] $0212C8 (demo.exe)</div>`;
+    } else {
+      let html = openTabs.map(t =>
+        `<div class="tab-pill ${!isSet && !isDis && t.active ? 'active' : ''}" onclick="activateTab('${t.id}')"><span>${t.label}</span><span class="tab-x" onclick="event.stopPropagation()">×</span></div>`
+      ).join('');
+      if (isPausedOrAttach) {
+        html += `<div class="tab-pill ${isDis ? 'active' : ''}" onclick="setCenterView('disasm')">[DISASM] $0212C8</div>`;
+      }
+      if (setupTabOpen) {
+        html += `<div class="tab-pill ${isSet ? 'active' : ''}"><span>⚙ kajo-amiga.toml</span><span class="tab-x" onclick="closeSetupTab(event)" title="Close Setup Tab">×</span></div>`;
+      }
+      tabsEl.innerHTML = html;
+    }
 
     if (isSet) { renderProjectSetup(); return; }
 
     const rows = isDis ? disasmLines : srcLines;
-    document.getElementById('code-view').innerHTML = rows.map((r, idx) => {
-      const pcHit = (sessionState === 'paused' || sessionState === 'attach') && (r.addr === '0212C8');
+    el('code-view').innerHTML = rows.map((r, idx) => {
+      const pcHit = isPausedOrAttach && (r.addr === '0212C8');
+      const errHit = isErr && !!r.errMsg;
       const bpHit = isDis ? physBps.has(r.addr) : breakpoints.has(r.ln);
       const selHit = selectedIdx.has(idx);
       const col1 = isDis
         ? `<span class="g-addr">$${r.addr}</span><span class="g-ops">${r.ops}</span>`
-        : `<span class="g-ln">${r.ln}</span><span class="g-git ${r.ln>=302&&r.ln<=309?'mod':''}"></span>`;
+        : `<span class="g-ln">${r.ln}</span><span class="g-git ${errHit?'err':(r.ln>=302&&r.ln<=309?'mod':'')}"></span>`;
       const bpClick = isDis ? `event.stopPropagation();togglePhysBp('${r.addr}')` : `event.stopPropagation();toggleBp(${r.ln})`;
-      return `<div class="code-line ${pcHit?'cur-pc':''} ${selHit?'sel-ln':''}" onclick="selectCodeRow(${idx}, event)">
-        <span class="gutter"><span class="g-bp ${bpHit?'on':''}" onclick="${bpClick}">●</span><span class="g-pc">${pcHit?'▶':''}</span>${col1}<span class="g-cyc ${showCycles?'':'hidden'}">${r.cyc}</span></span><span>${r.html}</span>
+      const errBadge = errHit ? `<span class="inline-err-pill">${r.errMsg}</span>` : '';
+      return `<div class="code-line ${pcHit?'cur-pc':''} ${errHit?'err-ln':''} ${selHit?'sel-ln':''}" onclick="selectCodeRow(${idx}, event)">
+        <span class="gutter"><span class="g-bp ${bpHit?'on':''}" onclick="${bpClick}">●</span><span class="g-pc">${pcHit?'▶':(errHit?'✗':'')}</span>${col1}<span class="g-cyc ${showCycles?'':'hidden'}">${r.cyc}</span></span><span>${r.html}${errBadge}</span>
       </div>`;
     }).join('');
     updateSelectionCycles();
   }
 
-  /* Project Management: Header Menu, Wizard Modal & 4-Tab Setup */
+  /* Project Setup */
   let setupTab = 'targets';
   let setupMode = 'form';
   let activeSetupTarget = 0;
   let activeSetupProfile = 0;
   const setupTargets = [
-    { name:'bobs', kind:'os_exe (DH0:)', cpu:'68000', toolchain:'elf2hunk (C + ASM)', sources:'effects/bobs.asm, framework/devharness.asm, support/debug.asm', includes:'., $SDKDIR', defines:'DEV_MODE=1', extra:'DH0:s/startup-sequence' },
-    { name:'demo_disk', kind:'adf_dos (ADFlib)', cpu:'68000', toolchain:'elf2hunk (C + ASM)', sources:'src/main.c, src/copper_irq.asm', includes:'., src/, $SDKDIR', defines:'TRACKMO=1', extra:'data/font.raw, s/startup-sequence' },
-    { name:'trackmo', kind:'adf_raw (Bootblock)', cpu:'68000', toolchain:'hunk_vlink', sources:'bootblock.asm, loader.asm, effects/*.asm', includes:'.', defines:'TRACKMO=1, NOPAUSE', extra:'bootblock @ $70000' }
+    { name:'bobs', kind:'os_exe (DH0:)', cpu:'68000', toolchain:'elf2hunk (C + ASM)', sources:'effects/bobs.asm, framework/devharness.asm', includes:'., $SDKDIR', defines:'DEV_MODE=1', extra:'DH0:s/startup-sequence', loadAddr:'' },
+    { name:'demo_disk', kind:'adf_dos (ADFlib)', cpu:'68000', toolchain:'elf2hunk (C + ASM)', sources:'src/main.c, src/copper_irq.asm', includes:'., src/, $SDKDIR', defines:'TRACKMO=1', extra:'data/font.raw, s/startup-sequence', loadAddr:'' },
+    { name:'trackmo', kind:'adf_raw (Bootblock)', cpu:'68000', toolchain:'vasm_bin (raw)', sources:'bootblock.asm, loader.asm', includes:'.', defines:'TRACKMO=1, NOPAUSE', extra:'bootblock @ $70000', loadAddr:'$00020000' }
   ];
   const setupProfiles = [
     { id:'a500_ocs', model:'A500', cpu:'68000', chipset:'OCS', ram:'512K Chip + 512K Slow', kick:'kick13.rom', video:'PAL (50 Hz)', exact:'true' },
@@ -1450,87 +1857,71 @@
     { id:'a1200_aga', model:'A1200', cpu:'68020', chipset:'AGA', ram:'2048K Chip', kick:'kick31.rom', video:'PAL (50 Hz)', exact:'true' }
   ];
 
-  function toggleProjMenu(ev) {
-    if (ev) ev.stopPropagation();
-    document.getElementById('proj-popover').classList.toggle('hidden');
-  }
-  function closeProjMenu() { document.getElementById('proj-popover').classList.add('hidden'); }
+  function toggleProjMenu(ev) { if (ev) ev.stopPropagation(); el('proj-popover').classList.toggle('hidden'); }
+  function closeProjMenu() { el('proj-popover').classList.add('hidden'); }
   document.addEventListener('click', () => closeProjMenu());
 
-  function openNewProjectModal() { closeProjMenu(); document.getElementById('new-project-modal').classList.remove('hidden'); }
-  function closeNewProjectModal() { document.getElementById('new-project-modal').classList.add('hidden'); }
-  function selectTpl(id, btn) { btn.parentElement.querySelectorAll('.tpl-card').forEach(c => c.classList.remove('active')); btn.classList.add('active'); }
-  function pickModalSeg(btn) { btn.parentElement.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
-  function createNewProject() {
-    closeNewProjectModal();
-    setSessionState('paused', findStBtn('paused'));
-    setCenterView('setup');
+  function openNewProjectModal() { closeProjMenu(); el('new-project-modal').classList.remove('hidden'); }
+  function closeNewProjectModal() { el('new-project-modal').classList.add('hidden'); }
+  function selectTpl(id, btn) {
+    btn.parentElement.querySelectorAll('.tpl-card').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    const pkgs = el('wiz-pkg-group').querySelectorAll('.seg-btn');
+    pkgs.forEach(p => p.classList.remove('active'));
+    pkgs[id === 'adf_flop' ? 1 : 0].classList.add('active');
   }
+  function pickModalSeg(btn) { btn.parentElement.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
+  function createNewProject() { closeNewProjectModal(); setScenario('edit', findStBtn('edit')); }
   function setSetupMode(m) {
     setupMode = m;
-    document.getElementById('setup-mode-form').classList.toggle('active', m === 'form');
-    document.getElementById('setup-mode-raw').classList.toggle('active', m === 'raw');
-    document.getElementById('setup-tabs-bar').classList.toggle('hidden', m === 'raw');
-    document.getElementById('setup-form-area').classList.toggle('hidden', m === 'raw');
-    document.getElementById('setup-raw-area').classList.toggle('hidden', m !== 'raw');
+    el('setup-mode-form').classList.toggle('active', m === 'form');
+    el('setup-mode-raw').classList.toggle('active', m === 'raw');
+    show('setup-tabs-bar', m !== 'raw');
+    show('setup-form-area', m !== 'raw');
+    show('setup-raw-area', m === 'raw');
     renderProjectSetup();
   }
-  function switchSetupTab(t, btn) {
+  function switchSetupTab(t) {
     setupTab = t;
     document.querySelectorAll('.setup-tab').forEach(b => b.classList.toggle('active', b.dataset.stab === t));
     renderProjectSetup();
   }
-  function saveProjectSetupToast() {
-    const b = document.getElementById('sys-banner');
+  function showInfoBanner(txt) {
+    const b = el('sys-banner');
     b.className = 'sys-banner info';
-    document.getElementById('sys-banner-txt').textContent = '💾 Saved kajo-amiga.toml & regenerated .kajo-amiga/compile_commands.json for clangd + m68k-lsp-server.';
-    document.getElementById('sys-banner-actions').innerHTML = '<button class="tool-btn" onclick="document.getElementById(\'sys-banner\').className=\'sys-banner hidden\'">OK</button>';
+    el('sys-banner-txt').textContent = txt;
+    el('sys-banner-actions').innerHTML = '<button class="tool-btn" onclick="el(\'sys-banner\').className=\'sys-banner hidden\'">OK</button>';
   }
-  function exportMakefileToast() {
-    const b = document.getElementById('sys-banner');
-    b.className = 'sys-banner info';
-    document.getElementById('sys-banner-txt').textContent = '📄 Exported standalone GNU Makefile mirroring kajo-amiga.toml (targets: bobs, demo_disk, trackmo).';
-    document.getElementById('sys-banner-actions').innerHTML = '<button class="tool-btn" onclick="document.getElementById(\'sys-banner\').className=\'sys-banner hidden\'">OK</button>';
-  }
+  function saveProjectSetupToast() { showInfoBanner('💾 Saved kajo-amiga.toml & regenerated .kajo-amiga/compile_commands.json (clangd + m68k-lsp).'); }
+  function exportMakefileToast() { showInfoBanner('📄 Exported standalone GNU Makefile mirroring kajo-amiga.toml (targets: bobs, demo_disk, trackmo).'); }
+  function openSettingsPreview() { showInfoBanner('⚙ kajo-settings --page amiga (13/14) · Edits ~/.config/kajo/amiga.toml + inherits Kajo IDE prefs.'); }
+  function toggleFloatPreview(btn) { btn.classList.toggle('active'); showInfoBanner('🗗 Niri / kajo-comp floating mode toggled.'); }
 
   function renderProjectSetup() {
     if (setupMode === 'raw') {
-      document.getElementById('setup-raw-area').textContent =
+      el('setup-raw-area').textContent =
 `[project]
-name = "seeandseedee"
+name = "CopperBars"
 build_mode = "native"          # "native" (Option D DAG) | "external"
 default_target = "bobs"
 default_profile = "a500_ocs"
-shared_sources = ["framework/devharness.asm", "support/setsystem.asm", "support/debug.asm"]
+shared_sources = ["framework/devharness.asm", "support/setsystem.asm"]
 
 [[target]]
 name = "bobs"
 kind = "os_exe"                # "os_exe" (DH0:) | "adf_dos" (ADFlib) | "adf_raw"
 cpu = "68000"
-toolchain = "elf2hunk"         # C + 68k ASM -> DWARF3 ELF + AmigaDOS Hunk
+toolchain = "elf2hunk"
 sources = ["effects/bobs.asm"]
 includes = [".", "$SDKDIR"]
-defines = ["DEV_MODE=1"]
-
-[[target]]
-name = "demo_disk"
-kind = "adf_dos"               # Packaged in-process via adflib (OFS/FFS)
-cpu = "68000"
-toolchain = "elf2hunk"
-sources = ["src/main.c", "src/copper_irq.asm"]
-extra_files = ["data/font.raw", "s/startup-sequence"]
-
-[[asset]]
-name = "bob16_tables"
-inputs = ["assets/bobs.png"]
-outputs = ["data/bobs_planar.i"]
-cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
+defines = ["DEV_MODE=1"]`;
       return;
     }
 
-    const area = document.getElementById('setup-form-area');
+    const area = el('setup-form-area');
     if (setupTab === 'targets') {
       const t = setupTargets[activeSetupTarget];
+      const rawFields = t.loadAddr ? `<span class="form-lbl">LOAD ADDRESS</span><input class="mini-input" value="${t.loadAddr}" />` : '';
       area.innerHTML = `
         <div class="setup-split">
           <div style="display:flex;flex-direction:column;gap:4px;">
@@ -1556,12 +1947,13 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
               <div class="seg-group">
                 <button class="seg-btn ${t.toolchain.startsWith('elf2hunk')?'active':''}">elf2hunk (C+ASM)</button>
                 <button class="seg-btn ${t.toolchain==='hunk_vlink'?'active':''}">vlink / vbcc</button>
-                <button class="seg-btn">single_asm</button>
+                <button class="seg-btn ${t.toolchain.startsWith('vasm')?'active':''}">vasm raw</button>
               </div>
               <span class="form-lbl">CPU MODEL</span>
               <div class="seg-group">
-                <button class="seg-btn active">68000</button><button class="seg-btn">68020</button><button class="seg-btn">68030</button>
+                <button class="seg-btn active">68000</button><button class="seg-btn">68010</button><button class="seg-btn">68020</button>
               </div>
+              ${rawFields}
               <span class="form-lbl">SOURCES</span><input class="mini-input" value="${t.sources}" />
               <span class="form-lbl">INCLUDES</span><input class="mini-input" value="${t.includes}" />
               <span class="form-lbl">DEFINES (-D)</span><input class="mini-input" value="${t.defines}" />
@@ -1629,41 +2021,55 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
       selectedIdx = new Set([idx]);
       lastClickedIdx = idx;
     }
-    const rows = centerView === 'disasm' ? disasmLines : srcLines;
+    const rows = (centerView === 'disasm' || scenario === 'attach') ? disasmLines : srcLines;
     const r = rows[idx];
-    if (r) document.getElementById('st-pos').textContent = `Ln ${r.ln || idx}, $` + r.addr;
+    if (r) el('st-pos').textContent = `Ln ${r.ln || idx}, Col 1`;
     renderCenter();
   }
 
   function updateSelectionCycles() {
-    const rows = centerView === 'disasm' ? disasmLines : srcLines;
+    const rows = (centerView === 'disasm' || scenario === 'attach') ? disasmLines : srcLines;
     let minC = 0, maxC = 0, rd = 0, wr = 0, n = 0;
     selectedIdx.forEach(i => {
       const r = rows[i];
       if (r && r.cyc) { n++; minC += r.minC; maxC += r.maxC; rd += r.rd; wr += r.wr; }
     });
     const txt = minC === maxC ? `${minC}` : `${minC}–${maxC}`;
-    document.getElementById('st-sel-cyc').textContent = `SEL: ${n} ln · ${txt}(${rd}/${wr}) cyc`;
+    el('st-sel-cyc').textContent = showCycles ? `⏱ SEL: ${n} ln · ${txt}(${rd}/${wr}) cyc` : '⏱ CYC: OFF';
   }
 
   function setCenterView(v) { centerView = v; renderCenter(); }
-  function stepCpu() { stepIdx++; renderCpu(); }
+  function stepCpu() { stepIdx++; renderLeftSidebar(); }
   function toggleBp(ln) { if (breakpoints.has(ln)) breakpoints.delete(ln); else breakpoints.add(ln); renderCenter(); }
   function togglePhysBp(addr) { if (physBps.has(addr)) physBps.delete(addr); else physBps.add(addr); renderCenter(); }
-  function toggleCycleCol() { showCycles = !showCycles; document.getElementById('btn-cyc-col').textContent = showCycles ? '⏱ CYC: ON' : '⏱ CYC: OFF'; renderCenter(); }
-  function toggleBootMode() { const b = document.getElementById('boot-mode-btn'); b.textContent = b.textContent === 'DH0:' ? 'ADF (ADFlib)' : 'DH0:'; }
-  function openProjectSetupPreview() {
-    const b = document.getElementById('sys-banner');
-    const txt = document.getElementById('sys-banner-txt');
-    const act = document.getElementById('sys-banner-actions');
-    if (b.dataset.setupOpen === '1') { b.dataset.setupOpen = '0'; setSessionState(sessionState, findStBtn(sessionState)); return; }
-    b.dataset.setupOpen = '1'; b.dataset.settingsOpen = '0';
-    b.className = 'sys-banner info';
-    txt.textContent = '📁 Project Setup (kajo-amiga.toml) · Option D native DAG (-dependall=make / C -MMD) + ADFlib .adf packager + Hardware Profiles.';
-    act.innerHTML = '<button class="tool-btn" onclick="document.getElementById(\'sys-banner\').dataset.setupOpen=\'0\';setSessionState(sessionState,findStBtn(sessionState))">DISMISS</button>';
+  function toggleCycleCol() { showCycles = !showCycles; renderCenter(); }
+  function changeTarget(val) { el('st-file').innerHTML = `<strong>effects/${val}.asm</strong>`; }
+
+  function takeSnapshot() {
+    runningSnapTaken = true;
+    rightOpen = true;
+    show('btn-panel-right', true);
+    el('bpl-src-pill').textContent = 'FROZEN SNAP @ F#412';
+    el('cop-src-pill').textContent = 'FROZEN SNAP @ F#412';
+    renderBitplanes();
+    renderCopper();
+    syncPanels();
+    syncHalfScreenUI();
+    if (widthMode === '1-2') setHalfView('insp');
   }
-  function changeTarget(val) { document.getElementById('st-file').innerHTML = `<strong>effects/${val}.asm</strong>`; }
-  function takeSnapshot() { renderBitplanes(); renderCopper(); document.getElementById('rsp-out').textContent = '→ ↻ Snapshot: Pause → g + m dff000,200 + Chip RAM → Continue'; }
+
+  function closeInspector() {
+    rightOpen = false;
+    syncPanels();
+    if (widthMode === '1-2' && halfView === 'insp') setHalfView('code');
+  }
+
+  function openTraceDrawer() {
+    bottomOpen = true;
+    syncPanels();
+    switchDrawer('trace');
+    if (widthMode === '1-2') setHalfView('drawer');
+  }
 
   /* Bitplanes */
   const palColors = [
@@ -1672,7 +2078,7 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
     { idx:2, ocs:'$ABD', rgb:[170,187,221], hex:'#aabbdd' },
     { idx:3, ocs:'$669', rgb:[102,102,153], hex:'#666699' }
   ];
-  const bctx = document.getElementById('bpl-canvas').getContext('2d');
+  const bctx = el('bpl-canvas').getContext('2d');
   let bplIndices = new Uint8Array(320 * 256);
   function buildScene() {
     bplIndices.fill(0);
@@ -1704,32 +2110,32 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
       bctx.strokeStyle = 'rgba(0,216,240,0.32)'; bctx.lineWidth = 1;
       for (let x = 16; x < 320; x += 16) { bctx.beginPath(); bctx.moveTo(x+0.5, 0); bctx.lineTo(x+0.5, 256); bctx.stroke(); }
     }
-    document.getElementById('palette-row').innerHTML = palColors.map(c =>
+    el('palette-row').innerHTML = palColors.map(c =>
       `<div id="pal-${c.idx}" class="pal-swatch"><span class="pal-box" style="background:${c.hex}"></span><span>C0${c.idx}:${c.ocs}</span></div>`
     ).join('');
   }
-  document.getElementById('bpl-canvas').addEventListener('mousemove', e => {
+  el('bpl-canvas').addEventListener('mousemove', e => {
     const r = e.target.getBoundingClientRect();
     const x = Math.max(0, Math.min(319, Math.floor((e.clientX - r.left) * 320 / r.width)));
     const y = Math.max(0, Math.min(255, Math.floor((e.clientY - r.top) * 256 / r.height)));
     const raw = bplIndices[y * 320 + x];
     const idx = (planeMask[0] ? (raw & 1) : 0) | ((planeMask[1] ? ((raw >> 1) & 1) : 0) << 1);
     const chip = (curBuf === 'front' ? 0x039800 : 0x03E800) + y * 80 + (x >> 3);
-    document.getElementById('pixel-probe').innerHTML =
+    el('pixel-probe').innerHTML =
       `<span>X:${String(x).padStart(3,'0')} Y:${String(y).padStart(3,'0')} · IDX:${idx} (${palColors[idx].ocs})</span><span>CHIP $${chip.toString(16).toUpperCase().padStart(6,'0')} b${7-(x&7)}</span>`;
-    palColors.forEach(c => document.getElementById(`pal-${c.idx}`).classList.toggle('hit', c.idx === idx));
+    palColors.forEach(c => el(`pal-${c.idx}`).classList.toggle('hit', c.idx === idx));
   });
   function updateBitplaneMeta() {
-    const src = document.getElementById('bpl-source').value;
-    const lay = document.getElementById('bpl-layout').value;
-    document.getElementById('bpl-src-pill').textContent = src === 'snap' ? 'EMU SNAP · BPL1PT $039800' : (src === 'sym' ? 'SYM: scr0' : 'MANUAL $039800');
-    document.getElementById('bpl-geom-lbl').textContent = lay === 'line2x' ? '320×256 LINE×2 · BPR:40' : (lay === 'planar' ? '320×256 PLANAR · BPR:40' : '320×256 INTERLEAVED · IMOD:40');
+    const src = el('bpl-source').value;
+    const lay = el('bpl-layout').value;
+    el('bpl-src-pill').textContent = src === 'snap' ? 'EMU SNAP · BPL1PT $039800' : (src === 'sym' ? 'SYM: scr0' : 'MANUAL $039800');
+    el('bpl-geom-lbl').textContent = lay === 'line2x' ? '320×256 LINE×2 · BPR:40' : (lay === 'planar' ? '320×256 PLANAR · BPR:40' : '320×256 INTERLV · IMOD:40');
   }
-  function togglePlane(p) { planeMask[p] = !planeMask[p]; document.getElementById(`btn-p${p}`).classList.toggle('active', planeMask[p]); renderBitplanes(); }
-  function toggleGrid() { showGrid = !showGrid; document.getElementById('btn-grid').classList.toggle('active', showGrid); renderBitplanes(); }
-  function setBuf(b) { curBuf = b; document.getElementById('btn-front').classList.toggle('active', b==='front'); document.getElementById('btn-back').classList.toggle('active', b==='back'); renderBitplanes(); }
+  function togglePlane(p) { planeMask[p] = !planeMask[p]; el(`btn-p${p}`).classList.toggle('active', planeMask[p]); renderBitplanes(); }
+  function toggleGrid() { showGrid = !showGrid; el('btn-grid').classList.toggle('active', showGrid); renderBitplanes(); }
+  function setBuf(b) { curBuf = b; el('btn-front').classList.toggle('active', b==='front'); el('btn-back').classList.toggle('active', b==='back'); renderBitplanes(); }
   function exportBitplanePng() {
-    const a = document.createElement('a'); a.href = document.getElementById('bpl-canvas').toDataURL('image/png');
+    const a = document.createElement('a'); a.href = el('bpl-canvas').toDataURL('image/png');
     a.download = 'kajo-amiga-bitplanes.png'; a.click();
   }
 
@@ -1745,51 +2151,50 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
   ];
   function renderCopper() {
     const rows = copperRows.filter(r => copFilter==='all' || r.kind===copFilter || (copFilter==='wait'&&r.kind==='barrier'));
-    document.getElementById('copper-list').innerHTML = rows.map(r =>
+    el('copper-list').innerHTML = rows.map(r =>
       `<div class="cop-row ${r.kind}"><span class="cop-addr">${r.addr}</span><span class="cop-raw">${r.raw}</span><span class="cop-dec"><span>${r.dec}</span><span class="cop-note">${r.note}</span></span></div>`
     ).join('');
   }
   function filterCopper(k, b) { copFilter = k; b.parentElement.querySelectorAll('.tool-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderCopper(); }
-  function loadCopperAddr() { document.getElementById('cop-src-pill').textContent = 'MANUAL ' + document.getElementById('cop-addr-inp').value; }
-  function scanCopper() { document.getElementById('cop-addr-inp').value = '$038200'; document.getElementById('cop-src-pill').textContent = 'SCANNER HIT $038200'; switchInspector('copper'); }
+  function loadCopperAddr() { el('cop-src-pill').textContent = 'MANUAL ' + el('cop-addr-inp').value; }
+  function scanCopper() { el('cop-addr-inp').value = '$038200'; el('cop-src-pill').textContent = 'SCANNER HIT $038200'; switchInspector('copper'); }
   function watchCop1lc() {
     copWatched = !copWatched;
-    const pill = document.getElementById('cop-src-pill');
+    const pill = el('cop-src-pill');
     pill.className = 'prov-pill ' + (copWatched ? 'prov-watched' : 'prov-snap');
     pill.textContent = copWatched ? 'WATCHED $DFF080 → $038200' : 'EMU SNAP · COP1LC $038200';
-    document.getElementById('cop-footer').textContent = copWatched
+    el('cop-footer').textContent = copWatched
       ? 'qRcmd,watch range dff080 8 2 ff ff ffffffff 0 0 0 1 → PC=$021094'
       : 'COP1LC/COPCON from m dff000,200 · 22 odd slots · COPCON=$0002';
   }
   function toggleTraceBlits() {
     traceBlits = !traceBlits;
-    const btn = document.getElementById('btn-trace-blits');
-    const pill = document.getElementById('blt-prov-pill');
-    btn.classList.toggle('active', traceBlits);
+    el('btn-trace-blits').classList.toggle('active', traceBlits);
+    const pill = el('blt-prov-pill');
     pill.className = 'prov-pill ' + (traceBlits ? 'prov-watched' : 'prov-snap');
-    pill.textContent = traceBlits ? 'WATCHED (log_only=1)' : 'EMU SNAPSHOT (m dff000,200)';
+    pill.textContent = traceBlits ? 'WATCHED (log_only=1)' : 'EMU SNAPSHOT';
   }
 
   /* Parameterized DMA Budget */
   function toggleDmaCh(btn) { btn.classList.toggle('active'); updateDmaBudget(); }
-  function toggleDmaHires() { dmaHires = !dmaHires; document.getElementById('btn-dma-hires').textContent = dmaHires ? 'RES: HIRES' : 'RES: LORES'; updateDmaBudget(); }
+  function toggleDmaHires() { dmaHires = !dmaHires; el('btn-dma-hires').textContent = dmaHires ? 'RES: HIRES' : 'RES: LORES'; updateDmaBudget(); }
   function applyDmaPreset(p) {
-    if (p === 'bobs15') { document.getElementById('rng-bpl').value=2; document.getElementById('rng-blits').value=95; document.getElementById('inp-blt-w').value=2; document.getElementById('inp-blt-h').value=30; document.getElementById('rng-cop').value=774; }
-    else if (p === 'bobs12') { document.getElementById('rng-bpl').value=2; document.getElementById('rng-blits').value=100; document.getElementById('inp-blt-w').value=2; document.getElementById('inp-blt-h').value=24; document.getElementById('rng-cop').value=814; }
-    else { document.getElementById('rng-bpl').value=4; document.getElementById('rng-blits').value=64; document.getElementById('inp-blt-w').value=1; document.getElementById('inp-blt-h').value=16; document.getElementById('rng-cop').value=40; }
+    if (p === 'bobs15') { el('rng-bpl').value=2; el('rng-blits').value=95; el('inp-blt-w').value=2; el('inp-blt-h').value=30; el('rng-cop').value=774; }
+    else if (p === 'bobs12') { el('rng-bpl').value=2; el('rng-blits').value=100; el('inp-blt-w').value=2; el('inp-blt-h').value=24; el('rng-cop').value=814; }
+    else { el('rng-bpl').value=4; el('rng-blits').value=64; el('inp-blt-w').value=1; el('inp-blt-h').value=16; el('rng-cop').value=40; }
     updateDmaBudget();
   }
   function updateDmaBudget() {
-    const bpl = parseInt(document.getElementById('rng-bpl').value, 10);
-    const blits = parseInt(document.getElementById('rng-blits').value, 10);
-    const bw = Math.max(1, parseInt(document.getElementById('inp-blt-w').value, 10) || 1);
-    const bh = Math.max(1, parseInt(document.getElementById('inp-blt-h').value, 10) || 1);
-    const cop = parseInt(document.getElementById('rng-cop').value, 10);
+    const bpl = parseInt(el('rng-bpl').value, 10);
+    const blits = parseInt(el('rng-blits').value, 10);
+    const bw = Math.max(1, parseInt(el('inp-blt-w').value, 10) || 1);
+    const bh = Math.max(1, parseInt(el('inp-blt-h').value, 10) || 1);
+    const cop = parseInt(el('rng-cop').value, 10);
     const chCount = document.querySelectorAll('.dma-ch.active').length;
 
-    document.getElementById('lbl-bpl').textContent = bpl;
-    document.getElementById('lbl-blits').textContent = blits;
-    document.getElementById('lbl-cop').textContent = cop;
+    el('lbl-bpl').textContent = bpl;
+    el('lbl-blits').textContent = blits;
+    el('lbl-cop').textContent = cop;
 
     const bplPerLine = bpl * (dmaHires ? 40 : 20);
     const freeVis = Math.max(0, 113 - bplPerLine);
@@ -1800,14 +2205,14 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
     const pct = Math.round((used / Math.max(1, availOdd)) * 100);
     const margin = availOdd - used;
 
-    document.getElementById('dma-budget-badge').textContent = `${used.toLocaleString()} / ${availOdd.toLocaleString()} (${pct}%)`;
-    const fill = document.getElementById('dma-slot-fill');
+    el('dma-budget-badge').textContent = `${used.toLocaleString()} / ${availOdd.toLocaleString()} (${pct}%)`;
+    const fill = el('dma-slot-fill');
     fill.style.width = `${Math.min(100, pct)}%`;
     fill.className = 'level-fill ' + (pct > 100 ? 'urgent' : pct > 88 ? 'warn' : 'ok');
-    document.getElementById('dma-blt-val').textContent = bltTotal.toLocaleString();
-    document.getElementById('dma-cop-val').textContent = copTotal.toLocaleString();
-    document.getElementById('dma-margin-val').textContent = margin >= 0 ? `+${margin.toLocaleString()} OK` : `${margin.toLocaleString()} OVER`;
-    document.getElementById('dma-margin-val').style.color = margin >= 0 ? '#4cd964' : '#ff6b6b';
+    el('dma-blt-val').textContent = bltTotal.toLocaleString();
+    el('dma-cop-val').textContent = copTotal.toLocaleString();
+    el('dma-margin-val').textContent = margin >= 0 ? `+${margin.toLocaleString()} OK` : `${margin.toLocaleString()} OVER`;
+    el('dma-margin-val').style.color = margin >= 0 ? '#4cd964' : '#ff6b6b';
 
     const segs = [
       { label:'REF', pct:3.5, color:'#444' },
@@ -1817,40 +2222,22 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
       { label:'COP', pct:7, color:'#ff8c00' },
       { label:'BLT', pct:Math.max(4, 100-16.6-Math.min(72,(bplPerLine/113)*85)), color:'#00d8f0' }
     ];
-    document.getElementById('dma-scanline-bar').innerHTML = segs.map(s=>`<div class="dma-seg" style="width:${s.pct.toFixed(1)}%;background:${s.color};">${s.pct>7?s.label:''}</div>`).join('');
-    document.getElementById('dma-legend').innerHTML = segs.map(s=>`<span><span class="dma-dot" style="background:${s.color}"></span>${s.label}</span>`).join('');
+    el('dma-scanline-bar').innerHTML = segs.map(s=>`<div class="dma-seg" style="width:${s.pct.toFixed(1)}%;background:${s.color};">${s.pct>7?s.label:''}</div>`).join('');
+    el('dma-legend').innerHTML = segs.map(s=>`<span><span class="dma-dot" style="background:${s.color}"></span>${s.label}</span>`).join('');
   }
 
-  /* Watches, Trace Toggle, RSP Monitor, Hex Dump */
-  function toggleTraceBox(btn) {
-    const w = document.getElementById('watches-body');
-    const t = document.getElementById('trace-body');
-    const showTrace = t.classList.contains('hidden');
-    w.classList.toggle('hidden', showTrace);
-    t.classList.toggle('hidden', !showTrace);
-    document.getElementById('w-hdr-lbl').textContent = showTrace ? 'Trace Ring (history read)' : 'Typed Watches (.b/.w/.l/ptr)';
-    btn.textContent = showTrace ? 'WATCHES' : 'TRACE (128)';
-  }
-  function cycleWatchFmt(idx, btn) {
-    const cur = btn.textContent;
-    const next = watchFmts[(watchFmts.indexOf(cur) + 1) % watchFmts.length];
-    btn.textContent = next;
-    document.getElementById(`wval-${idx}`).textContent = watchSamples[idx][next] || watchSamples[idx]['ptr'];
-  }
-  function runMonitorPreset(cmd) {
-    document.getElementById('rsp-cmd').value = cmd;
-    runMonitorCmd();
-    switchDrawer('debug');
-  }
+  /* qRcmd Console & Memory Hex */
+  function runMonitorPreset(cmd) { el('rsp-cmd').value = cmd; runMonitorCmd(); bottomOpen = true; syncPanels(); switchDrawer('rcmd'); }
   function runMonitorCmd() {
-    const cmd = document.getElementById('rsp-cmd').value.trim();
-    const out = document.getElementById('rsp-out');
-    if (cmd.startsWith('segments')) out.textContent = '→ {"process":131584,"name":"bobs.exe","command":"bobs.exe","segments":[{"index":0,"address":135232,"size":4280},{"index":1,"address":229888,"size":88000}]}';
+    const cmd = el('rsp-cmd').value.trim();
+    const out = el('rsp-out');
+    if (cmd.startsWith('segments')) out.textContent = '→ {"process":131584,"name":"bobs.exe","segments":[{"index":0,"address":135232,"size":4280},{"index":1,"address":229888,"size":88000}]}';
     else if (cmd.startsWith('tasks')) out.textContent = '→ {"tasks":[{"address":131584,"name":"bobs.exe","type":13,"list":"current","saved_sp":523776}]}';
     else if (cmd.startsWith('disasm')) out.textContent = '→ (text) 000212c8 d2b5 5000 add.l ($00,a5,d5.w),d1 == $00042100';
     else if (cmd.startsWith('history')) out.textContent = '→ {"entries":[{"pc":135876,"frame":412,"vpos":142,"hpos":94},...]}';
+    else if (cmd.startsWith('exception')) out.textContent = '→ {"vector":0,"fault_addr":0,"vbr":0}';
     else if (cmd.startsWith('checkpoint')) out.textContent = '→ OK (savestate .uss bound to active GDB session)';
-    else out.textContent = '→ {"execution":"stopped","debugger_stopped":true,"host_pause":0,"frame":412,"vpos":142,"hpos":100,"cycles":"29184420"}';
+    else out.textContent = '→ {"execution":"stopped","debugger_stopped":true,"frame":412,"vpos":142,"hpos":100,"cycles":"29184420"}';
   }
   const hexData = {
     '$038200': [['038200',['01','00','22','00','01','08','00','28','00','E0','00','03','00','E2','98','00'],'.."..(..........',[2,3]], ['038210',['00','44','FF','FF','00','4C','00','04','00','01','7F','FE','00','40','3F','CA'],'.D...L.......@?.',[15]]],
@@ -1868,65 +2255,89 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
   }
   function jumpMem(addr, lbl) {
     curMemAddr = hexData[addr] ? addr : '$038200';
-    document.getElementById('hex-jump-inp').value = addr;
-    document.getElementById('mem-label').textContent = `${lbl||''} (${addr})`;
+    el('hex-jump-inp').value = addr;
+    el('mem-label').textContent = `${lbl||''} (${addr})`;
     const rows = hexData[curMemAddr];
-    document.getElementById('hex-dump').innerHTML = rows.map(([a, bytes, asc, chg]) =>
+    el('hex-dump').innerHTML = rows.map(([a, bytes, asc, chg]) =>
       `<div class="hex-line"><span class="hex-addr">${a}:</span>  ${formatHexBytes(bytes, chg)}  <span class="hex-asc">${asc}</span></div>`
     ).join('');
-    switchDrawer('mem');
+    if (scenario === 'paused' || scenario === 'attach' || (scenario === 'running' && runningSnapTaken)) {
+      bottomOpen = true;
+      syncPanels();
+      switchDrawer('mem');
+    }
   }
-  function jumpMemInput() { jumpMem(document.getElementById('hex-jump-inp').value.trim(), 'JUMP'); }
-  function findMemPattern() { const q = document.getElementById('hex-find-inp').value.trim(); if (q) document.getElementById('mem-label').textContent = `HIT "${q}" @ ${curMemAddr}`; }
+  function jumpMemInput() { jumpMem(el('hex-jump-inp').value.trim(), 'JUMP'); }
+  function findMemPattern() { const q = el('hex-find-inp').value.trim(); if (q) el('mem-label').textContent = `HIT "${q}" @ ${curMemAddr}`; }
   function setHexGroup(g, btn) { hexGroup = g; btn.parentElement.querySelectorAll('.seg-btn').forEach(x=>x.classList.remove('active')); btn.classList.add('active'); jumpMem(curMemAddr, 'VIEW'); }
-  function addWatchpointMsg(cmd) { switchDrawer('debug'); document.getElementById('rsp-out').textContent = `→ qRcmd,${cmd} ${curMemAddr.replace('$','')} 4 2 ... installed`; }
-  function exportMemBin() { document.getElementById('mem-label').textContent = `EXPORTED ${curMemAddr}.bin`; }
-  function triggerBuildLog() { document.getElementById('bottom-drawer').classList.remove('hidden'); switchDrawer('build'); }
+  function addWatchpointMsg(cmd) { switchDrawer('rcmd'); el('rsp-out').textContent = `→ qRcmd,${cmd} ${curMemAddr.replace('$','')} 4 2 ... installed`; }
+  function exportMemBin() { el('mem-label').textContent = `EXPORTED ${curMemAddr}.bin`; }
 
-  /* Tabs & Niri Width Reflow */
+  /* Drawer & Inspector Switching */
   function switchInspector(tab) {
     document.querySelectorAll('.insp-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.insp-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
-    if (document.getElementById('amiga-window').classList.contains('w-1-2')) setHalfPane('insp');
+    if (widthMode === '1-2') setHalfView('insp');
   }
   function switchDrawer(tab) {
     document.querySelectorAll('.drawer-tab').forEach(b => b.classList.toggle('active', b.dataset.dtab === tab));
     document.querySelectorAll('.drawer-panel').forEach(p => p.classList.toggle('active', p.id === `dtab-${tab}`));
-    document.getElementById('bottom-drawer').classList.remove('hidden');
   }
-  function toggleDrawer() { document.getElementById('bottom-drawer').classList.toggle('hidden'); }
-  function openSettingsPreview() {
-    const b = document.getElementById('sys-banner');
-    const txt = document.getElementById('sys-banner-txt');
-    const act = document.getElementById('sys-banner-actions');
-    if (b.dataset.settingsOpen === '1') { b.dataset.settingsOpen = '0'; setSessionState(sessionState, findStBtn(sessionState)); return; }
-    b.dataset.settingsOpen = '1';
-    b.className = 'sys-banner info';
-    txt.textContent = '⚙ kajo-settings --page amiga (13/14) · Edits ~/.config/kajo/amiga.toml + inherits Kajo IDE (10/14) font/scheme via live GFileMonitor hot-reload.';
-    act.innerHTML = '<button class="tool-btn" onclick="document.getElementById(\'sys-banner\').dataset.settingsOpen=\'0\';setSessionState(sessionState,findStBtn(sessionState))">DISMISS</button>';
+  function closeDrawer() {
+    if (widthMode === '1-2' && halfView === 'drawer') {
+      setHalfView(scenario === 'attach' ? 'disasm' : 'code');
+      return;
+    }
+    bottomOpen = false;
+    syncPanels();
   }
-  function toggleTree() { const el=document.getElementById('left-sidebar'); el.classList.toggle('hidden'); document.getElementById('btn-tree').classList.toggle('active', !el.classList.contains('hidden')); }
-  function toggleCpu() { const el=document.getElementById('cpu-strip'); el.classList.toggle('hidden'); document.getElementById('btn-cpu').classList.toggle('active', !el.classList.contains('hidden')); }
-  function setHalfPane(which) {
-    const win = document.getElementById('amiga-window');
-    win.classList.toggle('half-show-editor', which === 'editor');
-    win.classList.toggle('half-show-insp', which === 'insp');
-    document.getElementById('half-ed-btn').classList.toggle('active', which === 'editor');
-    document.getElementById('half-in-btn').classList.toggle('active', which === 'insp');
+
+  /* Responsive Niri Reflow */
+  function syncHalfScreenUI() {
+    const isHalf = widthMode === '1-2';
+    const hasDebugViews = scenario === 'paused' || scenario === 'attach' || (scenario === 'running' && runningSnapTaken);
+    show('half-strip', isHalf && hasDebugViews);
+    show('hs-cpu', scenario === 'paused' || scenario === 'attach');
+    show('hs-code', scenario !== 'attach');
+    show('hs-disasm', scenario === 'paused' || scenario === 'attach');
+    show('hs-drawer', scenario === 'paused' || scenario === 'attach');
+    if (isHalf && hasDebugViews) {
+      if (scenario === 'attach' && halfView === 'code') halfView = 'disasm';
+      setHalfView(halfView);
+    } else {
+      el('amiga-window').classList.remove('half-v-cpu', 'half-v-code', 'half-v-disasm', 'half-v-insp', 'half-v-drawer');
+    }
   }
+
+  function setHalfView(which) {
+    halfView = which;
+    const win = el('amiga-window');
+    win.classList.remove('half-v-cpu', 'half-v-code', 'half-v-disasm', 'half-v-insp', 'half-v-drawer');
+    win.classList.add('half-v-' + which);
+    document.querySelectorAll('#half-seg-group .seg-btn').forEach(b => b.classList.remove('active'));
+    const btnMap = { cpu:'hs-cpu', code:'hs-code', disasm:'hs-disasm', insp:'hs-insp', drawer:'hs-drawer' };
+    if (btnMap[which]) el(btnMap[which]).classList.add('active');
+    if (which === 'code') setCenterView('source');
+    else if (which === 'disasm') setCenterView('disasm');
+    else if (which === 'cpu') switchSidebarTab('debug');
+    else if (which === 'drawer') { bottomOpen = true; syncPanels(); }
+  }
+
   function setWidth(w, btn) {
+    widthMode = w;
     btn.parentElement.querySelectorAll('.demo-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    const win = document.getElementById('amiga-window');
-    const stg = document.getElementById('niri-stage');
-    const half = win.classList.contains('half-show-insp') ? 'half-show-insp' : 'half-show-editor';
-    win.className = 'amiga-window ' + half;
+    const win = el('amiga-window');
+    const stg = el('niri-stage');
+    win.classList.remove('w-2-3', 'w-1-2');
     stg.classList.toggle('floating', w === 'float');
-    if (w === '2-3') win.classList.add('w-2-3');
-    if (w === '1-2') win.classList.add('w-1-2');
-    document.getElementById('half-toggle').classList.toggle('hidden', w !== '1-2');
-    document.getElementById('btn-tree').classList.toggle('hidden', w === '1-2');
+    if (w === '2-3') { win.classList.add('w-2-3'); leftOpen = false; }
+    else if (w === '1-2') { win.classList.add('w-1-2'); leftOpen = false; }
+    else if (scenario !== 'welcome') { leftOpen = true; }
+    syncPanels();
+    syncHalfScreenUI();
   }
+
   function setAccent(hex, rgb, dot) {
     document.querySelectorAll('.swatch-dot').forEach(d => d.classList.remove('active'));
     dot.classList.add('active');
@@ -1934,20 +2345,25 @@ cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
     document.documentElement.style.setProperty('--metro-accent-rgb', rgb);
   }
 
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeHrmQuickModal(); closeNewProjectModal(); closeProjMenu(); }
+  });
+
   renderBitplanes();
   renderCopper();
   updateDmaBudget();
-  setSessionState('paused', findStBtn('paused'));
   jumpMem('$038200', 'COP1LC');
-  switchDrawer('debug');
+  setScenario('edit', findStBtn('edit'));
 
   const urlView = new URLSearchParams(location.search).get('view');
-  if (urlView === 'welcome') setSessionState('welcome', findStBtn('welcome'));
-  else if (urlView === 'idle') setSessionState('idle', findStBtn('idle'));
-  else if (urlView === 'running') setSessionState('running', findStBtn('running'));
-  else if (urlView === 'attach') setSessionState('attach', findStBtn('attach'));
-  else if (urlView === 'setup') { setSessionState('paused', findStBtn('paused')); setCenterView('setup'); }
-  else if (urlView === 'new') { setSessionState('paused', findStBtn('paused')); openNewProjectModal(); }
+  if (urlView === 'welcome') setScenario('welcome', findStBtn('welcome'));
+  else if (urlView === 'edit') setScenario('edit', findStBtn('edit'));
+  else if (urlView === 'build_err') setScenario('build_err', findStBtn('build_err'));
+  else if (urlView === 'setup') setScenario('setup', findStBtn('setup'));
+  else if (urlView === 'running') setScenario('running', findStBtn('running'));
+  else if (urlView === 'paused') setScenario('paused', findStBtn('paused'));
+  else if (urlView === 'attach') setScenario('attach', findStBtn('attach'));
+  else if (urlView === 'new') { setScenario('edit', findStBtn('edit')); openNewProjectModal(); }
 </script>
 </body>
 </html>

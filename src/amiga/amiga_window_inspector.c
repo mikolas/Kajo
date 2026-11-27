@@ -184,20 +184,24 @@ on_insp_tab_toggled(GtkToggleButton *tb, gpointer ud)
   }
 }
 
+static void
+on_insp_close_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  self->user_inspector_open = false;
+  if (self->inspector_box) gtk_widget_set_visible(self->inspector_box, FALSE);
+  if (self->btn_tog_right) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tog_right), FALSE);
+}
+
 GtkWidget *
 amiga_window_inspector_build(KajoAmigaWindow *self)
 {
   self->inspector_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_widget_add_css_class(self->inspector_box, "amiga-inspector");
-  gtk_widget_set_size_request(self->inspector_box, 356, -1);
-
-  GtkWidget *ihdr = gtk_label_new("HARDWARE INSPECTOR ($DFF000)");
-  gtk_widget_add_css_class(ihdr, "amiga-pane-header");
-  gtk_label_set_xalign(GTK_LABEL(ihdr), 0.0f);
-  gtk_box_append(GTK_BOX(self->inspector_box), ihdr);
 
   GtkWidget *tabs = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
   gtk_widget_add_css_class(tabs, "amiga-insp-tabs");
+  gtk_widget_set_valign(tabs, GTK_ALIGN_CENTER);
   static const char *const k_labels[5] = { "BPL", "COP", "CHIPS", "DMA", "HRM" };
   for (int i = 0; i < 5; i++) {
     self->insp_tab_btns[i] = gtk_toggle_button_new_with_label(k_labels[i]);
@@ -210,6 +214,13 @@ amiga_window_inspector_build(KajoAmigaWindow *self)
     g_signal_connect(self->insp_tab_btns[i], "toggled", G_CALLBACK(on_insp_tab_toggled), self);
     gtk_box_append(GTK_BOX(tabs), self->insp_tab_btns[i]);
   }
+  self->lbl_insp_snap_badge = gtk_label_new("LIVE");
+  gtk_widget_add_css_class(self->lbl_insp_snap_badge, "amiga-badge-live");
+  gtk_box_append(GTK_BOX(tabs), self->lbl_insp_snap_badge);
+  GtkWidget *bx = gtk_button_new_with_label("✕");
+  gtk_widget_add_css_class(bx, "amiga-mini-btn");
+  g_signal_connect(bx, "clicked", G_CALLBACK(on_insp_close_clicked), self);
+  gtk_box_append(GTK_BOX(tabs), bx);
   gtk_box_append(GTK_BOX(self->inspector_box), tabs);
 
   self->insp_stack = gtk_stack_new();
@@ -287,11 +298,25 @@ amiga_window_inspector_apply_snapshot(KajoAmigaWindow           *self,
 }
 
 void
+amiga_window_inspector_set_badge(KajoAmigaWindow *self, const char *text, bool frozen)
+{
+  if (!self || !self->lbl_insp_snap_badge) return;
+  gtk_label_set_text(GTK_LABEL(self->lbl_insp_snap_badge), text ? text : "LIVE");
+  gtk_widget_remove_css_class(self->lbl_insp_snap_badge, "amiga-badge-live");
+  gtk_widget_remove_css_class(self->lbl_insp_snap_badge, "amiga-badge-snapshot");
+  gtk_widget_add_css_class(self->lbl_insp_snap_badge,
+                           frozen ? "amiga-badge-snapshot" : "amiga-badge-live");
+}
+
+void
 amiga_window_inspector_lookup_hrm(KajoAmigaWindow *self, const char *query)
 {
   if (!self || !self->hrm_view) return;
-  if (self->project && self->project->hrm_dir) {
-    amiga_hrm_view_set_hrm_dir(self->hrm_view, self->project->hrm_dir);
+  if (self->project && self->project->hrm_dir && self->project->hrm_dir[0]) {
+    g_autofree char *abs = (g_path_is_absolute(self->project->hrm_dir) || !self->project->root_dir)
+                               ? g_strdup(self->project->hrm_dir)
+                               : g_build_filename(self->project->root_dir, self->project->hrm_dir, NULL);
+    amiga_hrm_view_set_hrm_dir(self->hrm_view, abs);
   }
   amiga_hrm_view_lookup(self->hrm_view, query);
   amiga_window_inspector_select_tab(self, 4);

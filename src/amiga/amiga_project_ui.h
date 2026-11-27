@@ -15,6 +15,7 @@ typedef void (*AmigaProjectSavedCb)(AmigaProject *proj, gpointer user_data);
 GtkWidget *amiga_welcome_view_new(const AmigaToolchainStatus *tc,
                                   AmigaActionCb               on_new,
                                   AmigaActionCb               on_open,
+                                  AmigaDirSelectedCb          on_open_recent,
                                   AmigaActionCb               on_attach,
                                   AmigaActionCb               on_settings,
                                   gpointer                    user_data);

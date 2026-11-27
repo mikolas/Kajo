@@ -9,9 +9,7 @@
 static void
 rm_rf(const char *path)
 {
-  if (!path || !g_file_test(path, G_FILE_TEST_EXISTS)) {
-    return;
-  }
+  if (!path || !g_file_test(path, G_FILE_TEST_EXISTS)) return;
   if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
     GDir *d = g_dir_open(path, 0, NULL);
     if (d) {
@@ -26,6 +24,15 @@ rm_rf(const char *path)
   } else {
     g_unlink(path);
   }
+}
+
+static bool
+ptr_array_contains_str(const GPtrArray *arr, const char *needle)
+{
+  for (guint i = 0; arr && i < arr->len; i++) {
+    if (g_strcmp0(g_ptr_array_index(arr, i), needle) == 0) return true;
+  }
+  return false;
 }
 
 static void
@@ -43,37 +50,34 @@ test_toml_roundtrip_and_presets(void)
   g_ptr_array_add(proj->shared_sources, g_strdup("src/common.c"));
   amiga_project_seed_default_profiles(proj);
   g_assert_cmpuint(proj->profiles->len, ==, 4);
-  g_assert_nonnull(amiga_project_find_profile(proj, "a500_ocs"));
-  g_assert_nonnull(amiga_project_find_profile(proj, "a1200_aga"));
+
+  const AmigaHwProfile *p_ocs = amiga_project_find_profile(proj, "a500_ocs");
+  const AmigaHwProfile *p_aga = amiga_project_find_profile(proj, "a1200_aga");
+  g_assert_nonnull(p_ocs);
+  g_assert_nonnull(p_aga);
+  g_autofree char *lbl_ocs = amiga_hw_profile_display_label(p_ocs);
+  g_autofree char *lbl_aga = amiga_hw_profile_display_label(p_aga);
+  g_assert_cmpstr(lbl_ocs, ==, "A500 OCS");
+  g_assert_cmpstr(lbl_aga, ==, "A1200 AGA");
 
   AmigaTarget *t = amiga_target_new("floppy");
-  t->kind = AMIGA_TARGET_ADF_DOS;
-  t->format = AMIGA_ARTIFACT_RAW_BIN;
+  t->kind = AMIGA_TARGET_EXE_ADF;
   g_free(t->cpu);
   t->cpu = g_strdup("68000");
-  t->toolchain = AMIGA_TOOLCHAIN_ELF2BIN;
+  t->toolchain = AMIGA_TOOLCHAIN_ELF2HUNK;
   t->entry_symbol = g_strdup("_start");
   t->load_addr = 0x10000u;
-  t->bin_path = g_strdup("out/floppy.bin");
-  t->boot_adf = g_strdup("out/trackmo.adf");
-  t->pack_cmd = g_strdup("doy {in} {out}");
+  t->exe_path = g_strdup("out/floppy.exe");
   g_ptr_array_add(t->sources, g_strdup("src/main.c"));
   g_ptr_array_add(t->sources, g_strdup("src/irq.s"));
-  g_ptr_array_add(t->includes, g_strdup("include"));
+  g_ptr_array_add(t->includes, g_strdup("."));
+  g_ptr_array_add(t->c_includes, g_strdup("include/c"));
+  g_ptr_array_add(t->asm_includes, g_strdup("include/asm"));
   g_ptr_array_add(t->defines, g_strdup("DEBUG=1"));
-  g_ptr_array_add(t->extra_files, g_strdup("assets/mod.song"));
-  g_ptr_array_add(t->symbol_files, g_strdup("out/kernel.elf"));
-  t->startup_sequence = g_strdup("floppy.exe");
+  t->startup_sequence = g_strdup("floppy.exe\n");
   t->copper_symbol = g_strdup("_copper_list");
   t->bitplane_symbol = g_strdup("_bpl0");
-  t->entry_addr = 0x20000u;
   g_ptr_array_add(proj->targets, t);
-
-  AmigaAsset *a = amiga_asset_new("logo");
-  g_ptr_array_add(a->inputs, g_strdup("assets/logo.png"));
-  g_ptr_array_add(a->outputs, g_strdup("build/logo.bpl"));
-  a->cmd = g_strdup("echo converting logo");
-  g_ptr_array_add(proj->assets, a);
 
   g_autofree char *toml = amiga_project_serialize_toml(proj);
   g_assert_nonnull(toml);
@@ -88,28 +92,36 @@ test_toml_roundtrip_and_presets(void)
   g_assert_true(parsed->trap86_guest_output);
   g_assert_cmpuint(parsed->shared_sources->len, ==, 1);
   g_assert_cmpuint(parsed->targets->len, ==, 1);
-  g_assert_cmpuint(parsed->assets->len, ==, 1);
   g_assert_cmpuint(parsed->profiles->len, ==, 4);
 
   const AmigaTarget *pt = amiga_project_find_target(parsed, "floppy");
   g_assert_nonnull(pt);
-  g_assert_cmpint(pt->kind, ==, AMIGA_TARGET_ADF_DOS);
-  g_assert_cmpint(pt->format, ==, AMIGA_ARTIFACT_RAW_BIN);
-  g_assert_cmpint(pt->toolchain, ==, AMIGA_TOOLCHAIN_ELF2BIN);
+  g_assert_cmpint(pt->kind, ==, AMIGA_TARGET_EXE_ADF);
+  g_assert_cmpint(pt->toolchain, ==, AMIGA_TOOLCHAIN_ELF2HUNK);
   g_assert_cmpuint(pt->sources->len, ==, 2);
-  g_assert_cmpuint(pt->symbol_files->len, ==, 1);
+  g_assert_true(ptr_array_contains_str(pt->c_includes, "include/c"));
+  g_assert_true(ptr_array_contains_str(pt->asm_includes, "include/asm"));
   g_assert_cmpuint(pt->load_addr, ==, 0x10000u);
-  g_assert_cmpuint(pt->entry_addr, ==, 0x20000u);
   g_assert_cmpstr(pt->entry_symbol, ==, "_start");
-  g_assert_cmpstr(pt->bin_path, ==, "out/floppy.bin");
-  g_assert_cmpstr(pt->boot_adf, ==, "out/trackmo.adf");
-  g_assert_cmpstr(pt->pack_cmd, ==, "doy {in} {out}");
+  g_assert_cmpstr(pt->exe_path, ==, "out/floppy.exe");
   g_assert_cmpstr(parsed->pre_build_cmd, ==, "echo pre");
   g_assert_cmpstr(parsed->post_build_cmd, ==, "echo post");
   g_assert_cmpstr(pt->copper_symbol, ==, "_copper_list");
 
   amiga_project_free(parsed);
   amiga_project_free(proj);
+
+  /* Legacy alias parsing compatibility */
+  const char *legacy =
+      "[project]\nname = \"Legacy\"\n"
+      "[[target]]\nname = \"rom\"\nkind = \"adf_raw\"\nformat = \"raw_bin\"\n";
+  AmigaProject *leg_p = NULL;
+  g_assert_true(amiga_project_parse_toml(legacy, "/tmp/leg", &leg_p, &err));
+  g_assert_no_error(err);
+  const AmigaTarget *lt = amiga_project_find_target(leg_p, "rom");
+  g_assert_nonnull(lt);
+  g_assert_cmpint(lt->kind, ==, AMIGA_TARGET_FLAT_BIN);
+  amiga_project_free(leg_p);
 }
 
 static void
@@ -125,32 +137,41 @@ test_templates_and_makefile_fallback(void)
     AMIGA_TEMPLATE_ADF_FLOPPY,
     AMIGA_TEMPLATE_MIXED_C_ASM,
   };
+  const AmigaTargetKind kinds[] = {
+    AMIGA_TARGET_EXE_DH0,
+    AMIGA_TARGET_EXE_DH0,
+    AMIGA_TARGET_EXE_ADF,
+    AMIGA_TARGET_FLAT_BIN,
+  };
   for (size_t i = 0; i < G_N_ELEMENTS(tpls); i++) {
     g_autofree char *sub = g_strdup_printf("%s/tpl-%zu", tmp, i);
     g_assert_true(amiga_project_init_template(
-        sub, "SampleDemo", tpls[i], "a500_ocs", AMIGA_TARGET_ADF_DOS, &err));
+        sub, "SampleDemo", tpls[i], "a500_ocs", kinds[i], &err));
     g_assert_no_error(err);
-
-    g_autofree char *manifest = g_build_filename(sub, "kajo-amiga.toml", NULL);
-    g_assert_true(g_file_test(manifest, G_FILE_TEST_EXISTS));
 
     AmigaProject *loaded = amiga_project_load_dir(sub, &err);
     g_assert_no_error(err);
     g_assert_nonnull(loaded);
-    g_assert_cmpuint(loaded->targets->len, >=, 1);
+    g_assert_cmpuint(loaded->targets->len, ==, 1);
     amiga_project_free(loaded);
   }
 
-  /* Mixed C+ASM compile_commands.json + Makefile export check */
+  /* Mixed C+ASM compile_commands.json must never emit literal $SDKDIR or mix ASM-only paths */
   g_autofree char *mixed_dir = g_strdup_printf("%s/tpl-3", tmp);
   AmigaProject *mixed = amiga_project_load_dir(mixed_dir, &err);
   g_assert_no_error(err);
+  AmigaTarget *mt = g_ptr_array_index(mixed->targets, 0);
+  g_ptr_array_add(mt->c_includes, g_strdup("/ndk/c_only"));
+  g_ptr_array_add(mt->asm_includes, g_strdup("/ndk/asm_only"));
   AmigaToolchainStatus *tc = amiga_project_probe_toolchain(NULL);
   g_assert_nonnull(tc);
   g_assert_nonnull(tc->adflib_version);
 
   g_autofree char *cc_json = amiga_project_build_compile_commands_json(mixed, tc);
   g_assert_nonnull(cc_json);
+  g_assert_null(strstr(cc_json, "$SDKDIR"));
+  g_assert_nonnull(strstr(cc_json, "/ndk/c_only"));
+  g_assert_null(strstr(cc_json, "/ndk/asm_only"));
   g_autoptr(JsonParser) parser = json_parser_new();
   g_assert_true(json_parser_load_from_data(parser, cc_json, -1, &err));
   g_assert_no_error(err);
@@ -168,37 +189,30 @@ test_templates_and_makefile_fallback(void)
   amiga_toolchain_status_free(tc);
   amiga_project_free(mixed);
 
-  /* External Makefile fallback (seeandseedee layout: framework + effects/ + docs/ + kick13.rom) */
+  /* External Makefile fallback must NOT synthesize build units from directory structure */
   g_autofree char *mk_dir = g_build_filename(tmp, "external-make", NULL);
   g_autofree char *fw_dir = g_build_filename(mk_dir, "framework", NULL);
   g_autofree char *fx_dir = g_build_filename(mk_dir, "effects", NULL);
-  g_autofree char *doc_dir = g_build_filename(mk_dir, "docs", NULL);
   g_mkdir_with_parents(fw_dir, 0755);
   g_mkdir_with_parents(fx_dir, 0755);
-  g_mkdir_with_parents(doc_dir, 0755);
   g_autofree char *mk_path = g_build_filename(mk_dir, "Makefile", NULL);
   g_autofree char *dh_path = g_build_filename(fw_dir, "devharness.asm", NULL);
   g_autofree char *cube_path = g_build_filename(fx_dir, "cube.asm", NULL);
-  g_autofree char *doc_path = g_build_filename(doc_dir, "blitter.md", NULL);
-  g_autofree char *kick_path = g_build_filename(mk_dir, "kick13.rom", NULL);
   g_assert_true(g_file_set_contents(mk_path, "all:\n\techo hi\n", -1, &err));
   g_assert_true(g_file_set_contents(dh_path, "; harness\n", -1, &err));
   g_assert_true(g_file_set_contents(cube_path, "; cube\n", -1, &err));
-  g_assert_true(g_file_set_contents(doc_path, "# Blitter\n", -1, &err));
-  g_assert_true(g_file_set_contents(kick_path, "ROM", -1, &err));
 
   AmigaProject *ext = amiga_project_load_dir(mk_dir, &err);
   g_assert_no_error(err);
   g_assert_nonnull(ext);
   g_assert_cmpint(ext->build_mode, ==, AMIGA_BUILD_EXTERNAL);
-  g_assert_cmpstr(ext->build_cmd, ==, "make -j4 effect={target}");
-  g_assert_cmpstr(ext->hrm_dir, ==, "docs");
-  g_assert_cmpuint(ext->shared_sources->len, ==, 1);
+  g_assert_cmpstr(ext->build_cmd, ==, "make");
+  g_assert_cmpuint(ext->shared_sources->len, ==, 0);
   g_assert_cmpuint(ext->targets->len, ==, 1);
-  const AmigaTarget *et = amiga_project_find_target(ext, "cube");
+  g_assert_null(amiga_project_find_target(ext, "cube"));
+  const AmigaTarget *et = amiga_project_find_target(ext, "external-make");
   g_assert_nonnull(et);
-  g_assert_cmpint(et->format, ==, AMIGA_ARTIFACT_HUNK_EXE);
-  g_assert_cmpstr(et->entry_symbol, ==, "_start");
+  g_assert_cmpint(et->kind, ==, AMIGA_TARGET_EXE_DH0);
   amiga_project_free(ext);
 
   rm_rf(tmp);
@@ -212,19 +226,36 @@ test_toolchain_probe_and_profile_compat(void)
   g_assert_no_error(err);
 
   g_autofree char *bin_dir = g_build_filename(tmp, "bin", NULL);
-  g_autofree char *sdk_inc = g_build_filename(tmp, "m68k-amiga-elf", "sys-include", NULL);
+  g_autofree char *c_inc = g_build_filename(tmp, "m68k-amiga-elf", "sys-include", NULL);
+  g_autofree char *asm_inc = g_build_filename(tmp, "Include_i", NULL);
   g_mkdir_with_parents(bin_dir, 0755);
-  g_mkdir_with_parents(sdk_inc, 0755);
+  g_mkdir_with_parents(c_inc, 0755);
+  g_mkdir_with_parents(asm_inc, 0755);
 
   g_autofree char *ld_path = g_build_filename(bin_dir, "m68k-amiga-elf-ld", NULL);
   g_assert_true(g_file_set_contents(ld_path, "#!/bin/sh\nexit 0\n", -1, &err));
   g_chmod(ld_path, 0755);
 
   const char *extra[] = { bin_dir, NULL };
-  AmigaToolchainStatus *tc = amiga_project_probe_toolchain(extra);
+  AmigaToolchainStatus *tc = amiga_project_probe_toolchain_ex(extra, NULL, asm_inc);
   g_assert_nonnull(tc);
   g_assert_cmpstr(tc->m68k_elf_ld, ==, ld_path);
-  g_assert_cmpstr(tc->sdk_include_dir, ==, sdk_inc);
+  /* C system header dir goes ONLY to c_include_dirs, ASM Include_i goes ONLY to asm_include_dirs */
+  g_assert_true(ptr_array_contains_str(tc->c_include_dirs, c_inc));
+  g_assert_false(ptr_array_contains_str(tc->asm_include_dirs, c_inc));
+  g_assert_true(ptr_array_contains_str(tc->asm_include_dirs, asm_inc));
+  g_assert_false(ptr_array_contains_str(tc->c_include_dirs, asm_inc));
+
+  g_autoptr(GPtrArray) resolved_c = g_ptr_array_new_with_free_func(g_free);
+  g_autoptr(GPtrArray) resolved_asm = g_ptr_array_new_with_free_func(g_free);
+  AmigaTarget *t0 = amiga_target_new("demo");
+  amiga_project_collect_target_includes(NULL, t0, tc, false, false, resolved_c);
+  amiga_project_collect_target_includes(NULL, t0, tc, true, false, resolved_asm);
+  g_assert_true(ptr_array_contains_str(resolved_c, c_inc));
+  g_assert_false(ptr_array_contains_str(resolved_c, asm_inc));
+  g_assert_true(ptr_array_contains_str(resolved_asm, asm_inc));
+  g_assert_false(ptr_array_contains_str(resolved_asm, c_inc));
+  amiga_target_free(t0);
   amiga_toolchain_status_free(tc);
 
   /* Profile compat check */

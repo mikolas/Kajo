@@ -18,7 +18,6 @@ typedef enum {
   AMIGA_STEP_SHELL_CMD = 0,
   AMIGA_STEP_STAGE_DH0,
   AMIGA_STEP_PACK_ADF_DOS,
-  AMIGA_STEP_PACK_ADF_RAW,
 } AmigaBuildStepKind;
 
 typedef struct {

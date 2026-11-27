@@ -66,6 +66,8 @@ static const KajoFieldSpec k_amiga_fields[] = {
     { NULL, KAJO_CFG_KEY_AMIGA_ADF_UAEBOARD,      KAJO_FIELD_BOOL,   offsetof(KajoAmigaCfg, adf_uaeboard_guest_output),.def.b = TRUE },
     { NULL, KAJO_CFG_KEY_AMIGA_DEFAULT_TOOLCHAIN, KAJO_FIELD_ENUM,   offsetof(KajoAmigaCfg, default_toolchain),        .def.e = KAJO_AMIGA_TC_ELF2HUNK, .enum_map = k_amiga_tc_map },
     { NULL, KAJO_CFG_KEY_AMIGA_EXTRA_BIN_PATHS,   KAJO_FIELD_STRING, offsetof(KajoAmigaCfg, extra_bin_paths),          .def.s = "" },
+    { NULL, KAJO_CFG_KEY_AMIGA_C_INCLUDE_DIRS,    KAJO_FIELD_STRING, offsetof(KajoAmigaCfg, c_include_dirs),           .def.s = "" },
+    { NULL, KAJO_CFG_KEY_AMIGA_ASM_INCLUDE_DIRS,  KAJO_FIELD_STRING, offsetof(KajoAmigaCfg, asm_include_dirs),         .def.s = "" },
     { NULL, KAJO_CFG_KEY_AMIGA_HRM_DIR,           KAJO_FIELD_STRING, offsetof(KajoAmigaCfg, hrm_dir),                  .def.s = "" },
     { NULL, KAJO_CFG_KEY_AMIGA_INHERIT_IDE_PREFS, KAJO_FIELD_BOOL,   offsetof(KajoAmigaCfg, inherit_ide_editor_prefs), .def.b = TRUE },
     { NULL, KAJO_CFG_KEY_AMIGA_SHOW_CYCLE_GUTTER, KAJO_FIELD_BOOL,   offsetof(KajoAmigaCfg, show_cycle_gutter),        .def.b = TRUE },

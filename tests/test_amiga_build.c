@@ -116,16 +116,13 @@ test_diagnostics_and_stage_dh0(void)
   g_mkdir_with_parents(proj_dir, 0755);
 
   g_autofree char *exe = g_build_filename(proj_dir, "demo.exe", NULL);
-  g_autofree char *extra = g_build_filename(proj_dir, "song.mod", NULL);
   g_assert_true(g_file_set_contents(exe, "HUNK", -1, &err));
-  g_assert_true(g_file_set_contents(extra, "MOD!", -1, &err));
 
   AmigaProject *proj = amiga_project_new();
   proj->root_dir = g_strdup(proj_dir);
   AmigaTarget *t = amiga_target_new("demo");
-  t->kind = AMIGA_TARGET_OS_EXE;
+  t->kind = AMIGA_TARGET_EXE_DH0;
   t->startup_sequence = g_strdup("c/demo.exe\n");
-  g_ptr_array_add(t->extra_files, g_strdup("song.mod"));
   g_ptr_array_add(proj->targets, t);
 
   g_assert_true(amiga_build_stage_dh0(proj, t, exe, dh0_dir, &err));
@@ -133,10 +130,8 @@ test_diagnostics_and_stage_dh0(void)
 
   g_autofree char *st_exe = g_build_filename(dh0_dir, "demo.exe", NULL);
   g_autofree char *st_seq = g_build_filename(dh0_dir, "s", "startup-sequence", NULL);
-  g_autofree char *st_ext = g_build_filename(dh0_dir, "song.mod", NULL);
   g_assert_true(g_file_test(st_exe, G_FILE_TEST_EXISTS));
   g_assert_true(g_file_test(st_seq, G_FILE_TEST_EXISTS));
-  g_assert_true(g_file_test(st_ext, G_FILE_TEST_EXISTS));
 
   amiga_project_free(proj);
   rm_rf(tmp);
@@ -165,7 +160,7 @@ test_async_external_build_success_fail_and_cancel(void)
   proj->post_build_cmd = g_strdup("printf POST > post.txt");
 
   AmigaTarget *t = amiga_target_new("out");
-  t->kind = AMIGA_TARGET_OS_EXE;
+  t->kind = AMIGA_TARGET_EXE_DH0;
   t->exe_path = g_strdup("build/out.exe");
   g_ptr_array_add(proj->targets, t);
 
@@ -209,12 +204,14 @@ test_async_external_build_success_fail_and_cancel(void)
   g_assert_cmpuint(d0->line, ==, 9);
   amiga_build_result_free(br);
 
-  /* 3. Native build DAG planning checks: single_asm & elf2bin */
+  /* 3. Native build DAG planning checks: single_asm, flat_bin (elf2bin) & split C/ASM includes */
   proj->build_mode = AMIGA_BUILD_NATIVE;
   g_autofree char *src_dir = g_build_filename(tmp, "src", NULL);
   g_mkdir_with_parents(src_dir, 0755);
   g_autofree char *main_s = g_build_filename(src_dir, "main.s", NULL);
+  g_autofree char *sub_c = g_build_filename(src_dir, "sub.c", NULL);
   g_assert_true(g_file_set_contents(main_s, "\trts\n", -1, &err));
+  g_assert_true(g_file_set_contents(sub_c, "int f(void){return 0;}\n", -1, &err));
   g_ptr_array_add(t->sources, g_strdup("src/main.s"));
   t->toolchain = AMIGA_TOOLCHAIN_SINGLE_ASM;
 
@@ -223,7 +220,7 @@ test_async_external_build_success_fail_and_cancel(void)
   g_chmod(fake_vasm, 0755);
 
   const char *extra_bins[] = { tmp, NULL };
-  AmigaToolchainStatus *tc = amiga_project_probe_toolchain(extra_bins);
+  AmigaToolchainStatus *tc = amiga_project_probe_toolchain_ex(extra_bins, "/c/sys_inc", "/asm/ndk_i");
   g_autoptr(GPtrArray) steps = NULL;
   g_assert_true(amiga_build_plan_steps(proj, t, tc, tmp, &steps, &err));
   g_assert_no_error(err);
@@ -232,15 +229,33 @@ test_async_external_build_success_fail_and_cancel(void)
   g_assert_cmpstr(s0->out_artifact, ==, "build/out.exe");
   g_clear_pointer(&steps, g_ptr_array_unref);
 
-  t->format = AMIGA_ARTIFACT_RAW_BIN;
+  t->kind = AMIGA_TARGET_FLAT_BIN;
   t->toolchain = AMIGA_TOOLCHAIN_ELF2BIN;
   t->entry_symbol = g_strdup("_start");
   t->load_addr = 0x10000u;
   t->bin_path = g_strdup("out/part.bin");
+  g_ptr_array_add(t->sources, g_strdup("src/sub.c"));
   g_assert_true(amiga_build_plan_steps(proj, t, tc, tmp, &steps, &err));
   g_assert_no_error(err);
-  g_assert_cmpuint(steps->len, ==, 3); /* assemble + ld + objcopy */
-  AmigaBuildStep *last = g_ptr_array_index(steps, 2);
+  g_assert_cmpuint(steps->len, ==, 4); /* assemble main.s + compile sub.c + ld + objcopy */
+  AmigaBuildStep *asm_st = g_ptr_array_index(steps, 0);
+  AmigaBuildStep *c_st = g_ptr_array_index(steps, 1);
+  bool asm_has_asm = false, asm_has_c = false, c_has_c = false, c_has_asm = false;
+  for (guint i = 0; i < asm_st->argv->len; i++) {
+    const char *a = g_ptr_array_index(asm_st->argv, i);
+    if (g_strcmp0(a, "-I/asm/ndk_i") == 0) asm_has_asm = true;
+    if (g_strcmp0(a, "-I/c/sys_inc") == 0) asm_has_c = true;
+  }
+  for (guint i = 0; i < c_st->argv->len; i++) {
+    const char *a = g_ptr_array_index(c_st->argv, i);
+    if (g_strcmp0(a, "-I/c/sys_inc") == 0) c_has_c = true;
+    if (g_strcmp0(a, "-I/asm/ndk_i") == 0) c_has_asm = true;
+  }
+  g_assert_true(asm_has_asm);
+  g_assert_false(asm_has_c);
+  g_assert_true(c_has_c);
+  g_assert_false(c_has_asm);
+  AmigaBuildStep *last = g_ptr_array_index(steps, 3);
   g_assert_cmpstr(last->out_artifact, ==, "out/part.bin");
   amiga_toolchain_status_free(tc);
 

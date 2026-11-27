@@ -23,6 +23,10 @@ typedef void (*AmigaMemWatchCb)(AmigaMemView *view,
                                 uint32_t      addr,
                                 uint32_t      len,
                                 gpointer      user_data);
+typedef void (*AmigaMemDmaWatchCb)(AmigaMemView *view,
+                                   uint32_t      addr,
+                                   uint32_t      len,
+                                   gpointer      user_data);
 
 AmigaMemView *amiga_mem_view_new(void);
 
@@ -31,6 +35,9 @@ void amiga_mem_view_set_callbacks(AmigaMemView    *self,
                                   AmigaMemWriteCb  write_cb,
                                   AmigaMemWatchCb  watch_cb,
                                   gpointer         user_data);
+void amiga_mem_view_set_dma_watch_callback(AmigaMemView       *self,
+                                           AmigaMemDmaWatchCb  dma_cb,
+                                           gpointer            user_data);
 
 void amiga_mem_view_set_regs_and_custom(AmigaMemView              *self,
                                         const AmigaCpuRegs        *regs,

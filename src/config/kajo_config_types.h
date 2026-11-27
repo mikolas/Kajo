@@ -450,6 +450,8 @@ typedef struct {
 
     KajoAmigaToolchain    default_toolchain;
     gchar                *extra_bin_paths;        /* ':'-separated */
+    gchar                *c_include_dirs;         /* ':'-separated NDK/sys C .h dirs */
+    gchar                *asm_include_dirs;       /* ':'-separated NDK/sys ASM .i dirs */
     gchar                *hrm_dir;
 
     gboolean              inherit_ide_editor_prefs;

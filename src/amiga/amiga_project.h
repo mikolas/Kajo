@@ -1,11 +1,10 @@
 #ifndef KAJO_AMIGA_PROJECT_H
 #define KAJO_AMIGA_PROJECT_H
 
-/* Pure GTK-free C17 manager for kajo-amiga.toml projects:
- * - Orthogonal [[target]], [[asset]], and [[profile]] tables
- * - Option D build_mode ("native" | "external") + Makefile exporter
- * - Starter project templates (68k ASM, Bare-Metal OCS, Bootable ADF, Mixed C+ASM)
- * - Toolchain probing (extra_bin_paths + adflib + SDKDIR) & compile_commands.json */
+/* Pure GTK-free kajo-amiga.toml project model:
+ * - Workspace + explicit [[target]] / [[profile]] definitions (zero directory heuristics)
+ * - Clean 3-option artifact/boot model: exe_dh0, exe_adf, flat_bin
+ * - Separate C (.h) vs ASM (.i) system include discovery & compile_commands.json */
 
 #include <glib.h>
 #include <stdbool.h>
@@ -20,22 +19,17 @@ typedef enum {
 } AmigaBuildMode;
 
 typedef enum {
-  AMIGA_TARGET_OS_EXE = 0,
-  AMIGA_TARGET_ADF_DOS,
-  AMIGA_TARGET_ADF_RAW,
+  AMIGA_TARGET_EXE_DH0 = 0,  /* AmigaDOS Hunk .exe staged under virtual DH0: */
+  AMIGA_TARGET_EXE_ADF,      /* AmigaDOS Hunk .exe packaged into bootable .adf via ADFlib */
+  AMIGA_TARGET_FLAT_BIN,     /* Flat binary .bin artifact (not directly booted as DOS exe) */
 } AmigaTargetKind;
 
 typedef enum {
-  AMIGA_ARTIFACT_HUNK_EXE = 0,
-  AMIGA_ARTIFACT_RAW_BIN,
-} AmigaArtifactFormat;
-
-typedef enum {
-  AMIGA_TOOLCHAIN_ELF2HUNK = 0,
-  AMIGA_TOOLCHAIN_HUNK_VLINK,
-  AMIGA_TOOLCHAIN_SINGLE_ASM,
-  AMIGA_TOOLCHAIN_ELF2BIN,
-  AMIGA_TOOLCHAIN_VASM_BIN,
+  AMIGA_TOOLCHAIN_ELF2HUNK = 0, /* gcc/vasm -Felf -dwarf=3 -> elf2hunk */
+  AMIGA_TOOLCHAIN_HUNK_VLINK,   /* vasm -Fhunk -linedebug (+ optional vc) -> vlink */
+  AMIGA_TOOLCHAIN_SINGLE_ASM,   /* vasmm68k_mot -Fhunkexe -linedebug */
+  AMIGA_TOOLCHAIN_ELF2BIN,      /* gcc/vasm -Felf -> ld -Ttext -> objcopy -O binary */
+  AMIGA_TOOLCHAIN_VASM_BIN,     /* vasmm68k_mot -Fbin */
 } AmigaToolchainKind;
 
 typedef enum {
@@ -46,35 +40,24 @@ typedef enum {
 } AmigaTemplateKind;
 
 typedef struct {
-  char                *name;
-  AmigaTargetKind      kind;
-  AmigaArtifactFormat  format;
-  char                *cpu;       /* "68000", "68010", "68020", ... */
-  AmigaToolchainKind   toolchain;
-  GPtrArray           *sources;     /* char* */
-  GPtrArray           *includes;    /* char* */
-  GPtrArray           *defines;     /* char* */
-  GPtrArray           *extra_files; /* char* */
-  GPtrArray           *symbol_files;/* char* (e.g. fixed-address .elf files for trackmo debugging) */
-  char                *startup_sequence;
-  char                *copper_symbol;
-  char                *bitplane_symbol;
-  char                *entry_symbol; /* e.g. "_start" */
-  uint32_t             load_addr;    /* -Ttext=<load_addr> */
-  uint32_t             entry_addr;   /* for adf_raw / OS-less targets */
-  char                *exe_path;     /* optional override */
-  char                *elf_path;     /* optional override */
-  char                *bin_path;     /* optional override for raw_bin */
-  char                *boot_adf;     /* optional prebuilt floppy image to boot (-0) */
-  char                *pack_cmd;     /* optional packer template ({in}, {out}, {target}) */
+  char               *name;
+  AmigaTargetKind     kind;
+  char               *cpu;            /* "68000", "68010", "68020", ... */
+  AmigaToolchainKind  toolchain;
+  GPtrArray          *sources;        /* char* */
+  GPtrArray          *includes;       /* char* shared project-local include dirs */
+  GPtrArray          *c_includes;     /* char* per-target C .h include dirs */
+  GPtrArray          *asm_includes;   /* char* per-target ASM .i include dirs */
+  GPtrArray          *defines;        /* char* */
+  char               *startup_sequence;
+  char               *copper_symbol;
+  char               *bitplane_symbol;
+  char               *entry_symbol;   /* e.g. "_start" */
+  uint32_t            load_addr;      /* -Ttext=<load_addr> for flat_bin / elf2bin */
+  char               *exe_path;       /* optional override */
+  char               *elf_path;       /* optional override */
+  char               *bin_path;       /* optional override */
 } AmigaTarget;
-
-typedef struct {
-  char      *name;
-  GPtrArray *inputs;  /* char* */
-  GPtrArray *outputs; /* char* */
-  char      *cmd;
-} AmigaAsset;
 
 typedef struct {
   char    *id;
@@ -101,7 +84,6 @@ typedef struct {
   char           *default_profile;
   GPtrArray      *shared_sources; /* char* */
   GPtrArray      *targets;        /* AmigaTarget* */
-  GPtrArray      *assets;         /* AmigaAsset* */
   GPtrArray      *profiles;       /* AmigaHwProfile* */
   char           *hrm_dir;
   char           *pre_build_cmd;
@@ -110,19 +92,20 @@ typedef struct {
 } AmigaProject;
 
 typedef struct {
-  char *amiberry;
-  char *vasmm68k_mot;
-  char *m68k_elf_gcc;
-  char *m68k_elf_ld;
-  char *m68k_elf_objdump;
-  char *m68k_elf_objcopy;
-  char *elf2hunk;
-  char *vlink;
-  char *vc;
-  char *m68k_lsp_server;
-  char *clangd;
-  char *sdk_include_dir;
-  char *adflib_version;
+  char      *amiberry;
+  char      *vasmm68k_mot;
+  char      *m68k_elf_gcc;
+  char      *m68k_elf_ld;
+  char      *m68k_elf_objdump;
+  char      *m68k_elf_objcopy;
+  char      *elf2hunk;
+  char      *vlink;
+  char      *vc;
+  char      *m68k_lsp_server;
+  char      *clangd;
+  GPtrArray *c_include_dirs;   /* char* NDK / GCC / VBCC C header dirs (.h) */
+  GPtrArray *asm_include_dirs; /* char* NDK / 68k ASM include dirs (.i) */
+  char      *adflib_version;
 } AmigaToolchainStatus;
 
 AmigaProject         *amiga_project_new(void);
@@ -131,11 +114,9 @@ void                  amiga_project_free(AmigaProject *proj);
 AmigaTarget          *amiga_target_new(const char *name);
 void                  amiga_target_free(AmigaTarget *t);
 
-AmigaAsset           *amiga_asset_new(const char *name);
-void                  amiga_asset_free(AmigaAsset *a);
-
 AmigaHwProfile       *amiga_hw_profile_new(const char *id);
 void                  amiga_hw_profile_free(AmigaHwProfile *p);
+char                 *amiga_hw_profile_display_label(const AmigaHwProfile *p);
 
 /* Seed the 4 built-in Amiberry hardware presets (a500_ocs, a500p_ecs, a1200_aga, a1200_fast) */
 void                  amiga_project_seed_default_profiles(AmigaProject *proj);
@@ -158,9 +139,19 @@ bool                  amiga_project_init_template(const char       *dir,
                                                   AmigaTargetKind   pkg_kind,
                                                   GError          **error);
 
-char                 *amiga_project_discover_sdkdir(const char *ld_bin_path);
 void                  amiga_toolchain_status_free(AmigaToolchainStatus *st);
 AmigaToolchainStatus *amiga_project_probe_toolchain(const char *const *extra_bin_paths);
+AmigaToolchainStatus *amiga_project_probe_toolchain_ex(const char *const *extra_bin_paths,
+                                                       const char        *c_include_dirs,
+                                                       const char        *asm_include_dirs);
+
+/* Shared deduped include resolver for GCC/VBCC/clangd (for_asm=false) or vasm/m68k-lsp (for_asm=true). */
+bool                  amiga_project_collect_target_includes(const AmigaProject         *proj,
+                                                            const AmigaTarget          *target,
+                                                            const AmigaToolchainStatus *tc,
+                                                            bool                        for_asm,
+                                                            bool                        make_abs,
+                                                            GPtrArray                  *out_dirs);
 
 char                 *amiga_project_build_compile_commands_json(const AmigaProject         *proj,
                                                                 const AmigaToolchainStatus *tc);
@@ -176,8 +167,6 @@ char                 *amiga_project_check_profile_compat(const AmigaTarget    *t
 
 const char           *amiga_target_kind_to_str(AmigaTargetKind k);
 AmigaTargetKind       amiga_target_kind_from_str(const char *s);
-const char           *amiga_artifact_format_to_str(AmigaArtifactFormat f);
-AmigaArtifactFormat   amiga_artifact_format_from_str(const char *s);
 const char           *amiga_toolchain_kind_to_str(AmigaToolchainKind k);
 AmigaToolchainKind    amiga_toolchain_kind_from_str(const char *s);
 
