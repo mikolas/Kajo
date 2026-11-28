@@ -118,10 +118,38 @@ private:
     state_->status = resp->GetStatus();
     CefResponse::HeaderMap hmap;
     resp->GetHeaderMap(hmap);
+    bool has_active_encoding = false;
     for (const auto& kv : hmap) {
       const std::string k = kv.first.ToString();
       const std::string v = kv.second.ToString();
-      if (!k.empty()) state_->resp_headers[k] = v;
+      if (k.empty()) continue;
+      const std::string lk = LowerAscii(k);
+      if (lk == "content-encoding") {
+        std::string lv = LowerAscii(v);
+        size_t a = 0;
+        size_t b = lv.size();
+        while (a < b && (lv[a] == ' ' || lv[a] == '\t')) ++a;
+        while (b > a && (lv[b - 1] == ' ' || lv[b - 1] == '\t')) --b;
+        lv = lv.substr(a, b - a);
+        if (!lv.empty() && lv != "identity") {
+          has_active_encoding = true;
+        }
+        continue;
+      }
+      state_->resp_headers[k] = v;
+    }
+    if (has_active_encoding) {
+      for (auto it = state_->resp_headers.begin(); it != state_->resp_headers.end();) {
+        if (LowerAscii(it->first) == "content-length") {
+          it = state_->resp_headers.erase(it);
+        } else {
+          ++it;
+        }
+      }
+    }
+    const std::string final_url = resp->GetURL().ToString();
+    if (final_url.rfind("http://", 0) == 0 || final_url.rfind("https://", 0) == 0) {
+      state_->resp_headers["X-Kajo-Final-Url"] = final_url;
     }
     if (state_->resp_headers.find("Content-Type") == state_->resp_headers.end() &&
         state_->resp_headers.find("content-type") == state_->resp_headers.end()) {
@@ -276,7 +304,7 @@ MediaFetchStreamFn CreateCefMediaFetcher(CefRefPtr<CefRequestContext> ctx,
       CefRefPtr<CefRequest> req = CefRequest::Create();
       req->SetURL(url);
       req->SetMethod(eff_method);
-      req->SetFlags(UR_FLAG_NONE);
+      req->SetFlags(UR_FLAG_ALLOW_STORED_CREDENTIALS);
       if (!referer.empty()) {
         req->SetReferrer(referer, REFERRER_POLICY_DEFAULT);
       }

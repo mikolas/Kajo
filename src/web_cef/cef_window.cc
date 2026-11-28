@@ -1472,9 +1472,35 @@ void KajoBrowserWindow::StartDownloadForMediaView(const ChromeMediaView& mv,
 
   const std::string effective_ua = !mv.user_agent.empty() ? mv.user_agent : cfg_.user_agent;
   std::string referer = !mv.referer.empty() ? mv.referer : fallback_referer;
+  auto has_origin_hdr = [](const std::map<std::string, std::string>& hdrs) {
+    for (const auto& kv : hdrs) {
+      if (g_ascii_strcasecmp(kv.first.c_str(), "origin") == 0 && !kv.second.empty()) {
+        return true;
+      }
+    }
+    return false;
+  };
   auto headers = mv.headers;
-  if (!mv.origin.empty() && headers.find("Origin") == headers.end()) {
+  if (!mv.origin.empty() && !has_origin_hdr(headers)) {
     headers["Origin"] = mv.origin;
+  } else if (!referer.empty() && !has_origin_hdr(headers)) {
+    g_autoptr(GUri) ref_uri = g_uri_parse(referer.c_str(), G_URI_FLAGS_NONE, nullptr);
+    if (ref_uri) {
+      const char* scheme = g_uri_get_scheme(ref_uri);
+      const char* host = g_uri_get_host(ref_uri);
+      const int port = g_uri_get_port(ref_uri);
+      if (scheme && scheme[0] && host && host[0]) {
+        std::string origin = std::string(scheme) + "://" + host;
+        const bool is_default_port =
+            port <= 0 ||
+            (g_ascii_strcasecmp(scheme, "https") == 0 && port == 443) ||
+            (g_ascii_strcasecmp(scheme, "http") == 0 && port == 80);
+        if (!is_default_port) {
+          origin += ":" + std::to_string(port);
+        }
+        headers["Origin"] = origin;
+      }
+    }
   }
 
   MediaFetchStreamFn fetcher = CreateCefMediaFetcher(

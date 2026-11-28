@@ -760,7 +760,8 @@ CefRefPtr<CefResponseFilter> CefTabClient::GetResourceResponseFilter(
   if (detached_.load(std::memory_order_acquire) || !request || !response) return nullptr;
   const int st = response->GetStatus();
   if (st < 200 || st >= 300) return nullptr;
-  const std::string uri = request->GetURL().ToString();
+  std::string uri = response->GetURL().ToString();
+  if (uri.empty()) uri = request->GetURL().ToString();
   const std::string mime = response->GetMimeType().ToString();
   if (!web_media_should_capture_manifest(uri.c_str(), mime.c_str())) return nullptr;
 
@@ -871,7 +872,8 @@ void CefTabClient::OnResourceLoadComplete(CefRefPtr<CefBrowser> browser,
   }
   if (cap_filter->overflow() || cap_filter->body().empty()) return;
 
-  const std::string uri = request->GetURL().ToString();
+  std::string uri = response->GetURL().ToString();
+  if (uri.empty()) uri = request->GetURL().ToString();
   const std::string mime = response->GetMimeType().ToString();
   TabMediaCapture cap;
   cap.uri = uri;

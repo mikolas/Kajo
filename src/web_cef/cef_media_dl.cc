@@ -103,11 +103,6 @@ std::string ResolveRelativeHttpUrl(const std::string& base_url, const std::strin
   return s ? std::string(s) : trimmed;
 }
 
-std::string EncodeFetchQueryUrl(const std::string& prefix, const std::string& abs_url) {
-  g_autofree gchar* esc = g_uri_escape_string(abs_url.c_str(), nullptr, FALSE);
-  return prefix + (esc ? std::string(esc) : abs_url);
-}
-
 std::string ExtractUrlExtension(const std::string& url) {
   size_t end = url.find_first_of("?#");
   std::string path = (end == std::string::npos) ? url : url.substr(0, end);
@@ -116,6 +111,25 @@ std::string ExtractUrlExtension(const std::string& url) {
   size_t dot = base.find_last_of('.');
   if (dot == std::string::npos || dot + 1 >= base.size()) return "";
   return ToLowerAscii(base.substr(dot + 1));
+}
+
+/* Prevent FFmpeg's URL-suffix probe (e.g. image2 on disguised .jpg/.png HLS segments)
+ * from misdetecting proxy URLs; HandleClient strips "&..." when decoding "u=". */
+bool HasProbeHijackingExtension(const std::string& url) {
+  const std::string ext = ExtractUrlExtension(url);
+  return ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "gif" ||
+         ext == "webp" || ext == "bmp" || ext == "ico" || ext == "svg" ||
+         ext == "html" || ext == "htm" || ext == "css" || ext == "js" ||
+         ext == "txt";
+}
+
+std::string EncodeFetchQueryUrl(const std::string& prefix, const std::string& abs_url) {
+  g_autofree gchar* esc = g_uri_escape_string(abs_url.c_str(), nullptr, FALSE);
+  std::string out = prefix + (esc ? std::string(esc) : abs_url);
+  if (HasProbeHijackingExtension(abs_url)) {
+    out += "&s=1";
+  }
+  return out;
 }
 
 bool SendAllFd(int fd, const char* data, size_t len, const std::atomic<bool>* stop_flag) {
@@ -339,7 +353,19 @@ std::vector<std::string> BuildFfmpegRemuxArgs(const std::string& ffmpeg_bin,
       "error",
       "-progress",
       "pipe:1",
+      "-protocol_whitelist",
+      "file,http,https,tcp,tls,crypto,data",
   };
+  if (ToLowerAscii(uri).find(".m3u8") != std::string::npos) {
+    args.emplace_back("-allowed_extensions");
+    args.emplace_back("ALL");
+    args.emplace_back("-allowed_segment_extensions");
+    args.emplace_back("ALL");
+    args.emplace_back("-extension_picky");
+    args.emplace_back("0");
+    args.emplace_back("-seg_max_retry");
+    args.emplace_back("3");
+  }
   if (uri.rfind("http://", 0) == 0 || uri.rfind("https://", 0) == 0) {
     if (!user_agent.empty()) {
       args.emplace_back("-user_agent");
@@ -374,11 +400,11 @@ std::vector<std::string> BuildFfmpegJobArgs(const FfmpegJobSpec& spec) {
       "error",
       "-progress",
       "pipe:1",
-      "-protocol_whitelist",
-      "file,http,https,tcp,tls,crypto,data",
   };
 
   auto append_input_opts = [&](const std::string& url, const std::string& fmt_override) {
+    args.emplace_back("-protocol_whitelist");
+    args.emplace_back("file,http,https,tcp,tls,crypto,data");
     if (!fmt_override.empty()) {
       args.emplace_back("-f");
       args.push_back(fmt_override);
@@ -389,6 +415,8 @@ std::vector<std::string> BuildFfmpegJobArgs(const FfmpegJobSpec& spec) {
         args.emplace_back("ALL");
         args.emplace_back("-extension_picky");
         args.emplace_back("0");
+        args.emplace_back("-seg_max_retry");
+        args.emplace_back("3");
       } else if (fmt_override == "dash") {
         args.emplace_back("-allowed_extensions");
         args.emplace_back("ALL");
@@ -1010,41 +1038,134 @@ void MediaLoopbackProxy::HandleClient(int client_fd) {
   bool is_manifest = false;
   bool is_hls = false;
   bool is_dash = false;
+  bool sniff_manifest = false;
+  bool strip_content_len = false;
   int resp_status = 502;
+  std::string effective_url = target_url;
   std::map<std::string, std::string> resp_hdrs;
+  std::string sniff_buf;
   std::string manifest_buf;
   bool manifest_overflow = false;
   bool sent_stream_hdr = false;
   bool write_failed = false;
 
+  auto emit_stream_headers = [&]() {
+    if (sent_stream_hdr) return;
+    sent_stream_hdr = true;
+    std::ostringstream hdr;
+    hdr << "HTTP/1.1 " << resp_status << " " << HttpStatusReason(resp_status) << "\r\n";
+    for (const auto& kv : resp_hdrs) {
+      const std::string lk = ToLowerAscii(kv.first);
+      if (lk == "content-type" || lk == "content-range" || lk == "accept-ranges" ||
+          (lk == "content-length" && !strip_content_len)) {
+        hdr << kv.first << ": " << StripCrLf(kv.second) << "\r\n";
+      }
+    }
+    hdr << "Connection: close\r\n\r\n";
+    if (!SendStringFd(client_fd, hdr.str(), &stopped_)) {
+      write_failed = true;
+    }
+  };
+
+  auto sniff_body_prefix = [](const std::string& buf, bool* out_hls, bool* out_dash) -> int {
+    size_t pos = 0;
+    if (buf.size() >= 3 &&
+        static_cast<unsigned char>(buf[0]) == 0xEF &&
+        static_cast<unsigned char>(buf[1]) == 0xBB &&
+        static_cast<unsigned char>(buf[2]) == 0xBF) {
+      pos = 3;
+    }
+    while (pos < buf.size() &&
+           (buf[pos] == ' ' || buf[pos] == '\t' || buf[pos] == '\r' || buf[pos] == '\n')) {
+      ++pos;
+    }
+    if (pos >= buf.size()) {
+      return (buf.size() >= 64) ? -1 : 0;
+    }
+    const std::string rem = buf.substr(pos);
+    static const char kHlsMagic[] = "#EXTM3U";
+    static const char kDashMagic[] = "<MPD";
+    static const char kXmlMagic[] = "<?xml";
+    if (rem.rfind(kHlsMagic, 0) == 0) {
+      *out_hls = true;
+      return 1;
+    }
+    if (rem.rfind(kDashMagic, 0) == 0 ||
+        (rem.rfind(kXmlMagic, 0) == 0 && rem.find(kDashMagic, 5) != std::string::npos)) {
+      *out_dash = true;
+      return 1;
+    }
+    if (buf.size() >= 64) return -1;
+    if (rem.rfind(kXmlMagic, 0) == 0) return 0;
+    if (rem.size() < 7 && std::string(kHlsMagic).rfind(rem, 0) == 0) return 0;
+    if (rem.size() < 4 && std::string(kDashMagic).rfind(rem, 0) == 0) return 0;
+    if (rem.size() < 5 && std::string(kXmlMagic).rfind(rem, 0) == 0) return 0;
+    return -1;
+  };
+
   auto on_headers = [&](int status, const std::map<std::string, std::string>& hdrs) {
     headers_arrived = true;
     resp_status = status > 0 ? status : 502;
     resp_hdrs = hdrs;
+    std::string ct;
+    for (const auto& kv : hdrs) {
+      const std::string lk = ToLowerAscii(kv.first);
+      if (lk == "x-kajo-final-url" &&
+          (kv.second.rfind("http://", 0) == 0 || kv.second.rfind("https://", 0) == 0)) {
+        effective_url = kv.second;
+      } else if (lk == "content-encoding") {
+        const std::string lv = TrimAscii(ToLowerAscii(kv.second));
+        if (!lv.empty() && lv != "identity") {
+          strip_content_len = true;
+        }
+      } else if (lk == "content-type") {
+        ct = TrimAscii(ToLowerAscii(kv.second));
+      }
+    }
     if (method != "HEAD" && status >= 200 && status < 300) {
-      is_manifest = LooksLikeManifestResponse(target_url, hdrs, &is_hls, &is_dash);
+      is_manifest = LooksLikeManifestResponse(effective_url, hdrs, &is_hls, &is_dash);
     }
     if (!is_manifest) {
-      std::ostringstream hdr;
-      hdr << "HTTP/1.1 " << resp_status << " " << HttpStatusReason(resp_status) << "\r\n";
-      for (const auto& kv : hdrs) {
-        const std::string lk = ToLowerAscii(kv.first);
-        if (lk == "content-type" || lk == "content-range" ||
-            lk == "accept-ranges" || lk == "content-length") {
-          hdr << kv.first << ": " << StripCrLf(kv.second) << "\r\n";
-        }
+      const bool non_media_ct =
+          ct.rfind("video/", 0) != 0 &&
+          ct.rfind("audio/", 0) != 0 &&
+          ct.rfind("image/", 0) != 0;
+      if (method != "HEAD" && status >= 200 && status < 300 && non_media_ct) {
+        sniff_manifest = true;
+      } else {
+        emit_stream_headers();
       }
-      hdr << "Connection: close\r\n\r\n";
-      if (!SendStringFd(client_fd, hdr.str(), &stopped_)) {
-        write_failed = true;
-      }
-      sent_stream_hdr = true;
     }
   };
 
   auto on_chunk = [&](const char* data, size_t len) -> bool {
     if (stopped_.load(std::memory_order_acquire) || write_failed) return false;
     if (!data || len == 0) return true;
+    if (sniff_manifest) {
+      sniff_buf.append(data, len);
+      const int verdict = sniff_body_prefix(sniff_buf, &is_hls, &is_dash);
+      if (verdict == 1) {
+        is_manifest = true;
+        sniff_manifest = false;
+        manifest_buf = std::move(sniff_buf);
+        sniff_buf.clear();
+        if (manifest_buf.size() > 4U * 1024U * 1024U) {
+          manifest_overflow = true;
+          return false;
+        }
+        return true;
+      }
+      if (verdict < 0) {
+        sniff_manifest = false;
+        emit_stream_headers();
+        if (!write_failed && !SendAllFd(client_fd, sniff_buf.data(), sniff_buf.size(), &stopped_)) {
+          write_failed = true;
+        }
+        sniff_buf.clear();
+        return !write_failed;
+      }
+      return true;
+    }
     if (is_manifest) {
       if (manifest_buf.size() + len > 4U * 1024U * 1024U) {
         manifest_overflow = true;
@@ -1062,6 +1183,17 @@ void MediaLoopbackProxy::HandleClient(int client_fd) {
 
   auto on_done = [&](bool ok, const std::string& err) {
     if (stopped_.load(std::memory_order_acquire)) return;
+    if (sniff_manifest) {
+      sniff_manifest = false;
+      emit_stream_headers();
+      if (!write_failed && !sniff_buf.empty()) {
+        if (!SendAllFd(client_fd, sniff_buf.data(), sniff_buf.size(), &stopped_)) {
+          write_failed = true;
+        }
+      }
+      sniff_buf.clear();
+      return;
+    }
     if (is_manifest) {
       if (!ok || manifest_overflow) {
         std::string msg = manifest_overflow ? "Manifest too large" : (err.empty() ? "Upstream error" : err);
@@ -1074,11 +1206,11 @@ void MediaLoopbackProxy::HandleClient(int client_fd) {
       std::string rewritten;
       std::string ct = "application/octet-stream";
       if (is_hls) {
-        rewritten = RewriteHlsManifestForProxy(manifest_buf, target_url, ProxyFetchPrefix());
+        rewritten = RewriteHlsManifestForProxy(manifest_buf, effective_url, ProxyFetchPrefix());
         ct = "application/vnd.apple.mpegurl";
       } else {
         rewritten = RewriteDashManifestForProxy(
-            manifest_buf, target_url, ProxyRelPrefix(), ProxyFetchPrefix());
+            manifest_buf, effective_url, ProxyRelPrefix(), ProxyFetchPrefix());
         ct = "application/dash+xml";
       }
       std::ostringstream hdr;
@@ -1626,6 +1758,7 @@ void MediaDownloadManager::RunYtDlpWorker(const std::shared_ptr<Job>& job,
       ytdlp_bin,
       "--no-playlist",
       "--newline",
+      "--progress",
       "--print",
       "after_move:KAJO_FINAL_PATH:%(filepath)s",
       "-o",
