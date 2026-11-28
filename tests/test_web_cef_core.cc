@@ -550,6 +550,96 @@ static void test_media_dl_helpers_and_ffmpeg(void) {
     proxy.Stop();
   }
 
+  /* Proxy regression checks: X-Kajo-Final-Url base rewrite, extensionless text/plain sniff, gzip Content-Length strip */
+  {
+    MediaLoopbackProxy proxy2([](const std::string& url,
+                                 const std::string&,
+                                 const std::map<std::string, std::string>&,
+                                 const std::atomic<bool>*,
+                                 std::function<void(int, const std::map<std::string, std::string>&)> on_headers,
+                                 std::function<bool(const char*, size_t)> on_chunk,
+                                 std::function<void(bool, const std::string&)> on_done) {
+      if (url == "https://entry.example/redir") {
+        on_headers(200, {{"Content-Type", "application/vnd.apple.mpegurl"},
+                         {"X-Kajo-Final-Url", "https://edge2.example/deep/list.m3u8"}});
+        const std::string body = "#EXTM3U\npart0.jpg\n";
+        on_chunk(body.data(), body.size());
+        on_done(true, "");
+      } else if (url == "https://cdn.example/manifest_no_ext") {
+        on_headers(200, {{"Content-Type", "text/plain; charset=utf-8"}});
+        const std::string body = "\xEF\xBB\xBF#EXTM3U\nchunkA\n";
+        on_chunk(body.data(), body.size());
+        on_done(true, "");
+      } else {
+        on_headers(200, {{"Content-Type", "video/mp2t"},
+                         {"Content-Encoding", "gzip"},
+                         {"Content-Length", "3"}});
+        on_chunk("DECOMPRESSED_BODY", 17);
+        on_done(true, "");
+      }
+    });
+    g_assert_true(proxy2.Start());
+
+    auto http_get2 = [&](const std::string& path) -> std::string {
+      g_autoptr(GSocketClient) client = g_socket_client_new();
+      g_socket_client_set_enable_proxy(client, FALSE);
+      g_autoptr(GSocketConnection) conn = g_socket_client_connect_to_host(
+          client, "127.0.0.1", proxy2.port(), nullptr, nullptr);
+      g_assert_nonnull(conn);
+      std::string req = "GET " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+      g_output_stream_write_all(g_io_stream_get_output_stream(G_IO_STREAM(conn)),
+                                req.data(), req.size(), nullptr, nullptr, nullptr);
+      std::string resp;
+      char buf[4096];
+      for (;;) {
+        gssize n = g_input_stream_read(g_io_stream_get_input_stream(G_IO_STREAM(conn)),
+                                       buf, sizeof(buf), nullptr, nullptr);
+        if (n <= 0) break;
+        resp.append(buf, static_cast<size_t>(n));
+      }
+      return resp;
+    };
+
+    const std::string redir_resp = http_get2(
+        "/" + proxy2.token() + "/fetch?u=https%3A%2F%2Fentry.example%2Fredir");
+    g_assert_true(redir_resp.find("200 OK") != std::string::npos);
+    g_assert_true(redir_resp.find("X-Kajo-Final-Url") == std::string::npos);
+    g_assert_true(redir_resp.find(proxy2.ProxyFetchPrefix() + "https%3A%2F%2Fedge2.example%2Fdeep%2Fpart0.jpg") != std::string::npos);
+
+    const std::string sniff_resp = http_get2(
+        "/" + proxy2.token() + "/fetch?u=https%3A%2F%2Fcdn.example%2Fmanifest_no_ext");
+    g_assert_true(sniff_resp.find("200 OK") != std::string::npos);
+    g_assert_true(sniff_resp.find("application/vnd.apple.mpegurl") != std::string::npos);
+    g_assert_true(sniff_resp.find(proxy2.ProxyFetchPrefix() + "https%3A%2F%2Fcdn.example%2FchunkA") != std::string::npos);
+
+    const std::string gzip_resp = http_get2(
+        "/" + proxy2.token() + "/fetch?u=https%3A%2F%2Fcdn.example%2Fseg_gzip");
+    g_assert_true(gzip_resp.find("200 OK") != std::string::npos);
+    g_assert_true(gzip_resp.find("Content-Length:") == std::string::npos);
+    g_assert_true(gzip_resp.find("DECOMPRESSED_BODY") != std::string::npos);
+    proxy2.Stop();
+  }
+
+  /* Verify BuildFfmpegJobArgs repeats -protocol_whitelist per input & adds -seg_max_retry for HLS */
+  {
+    FfmpegJobSpec jspec;
+    jspec.ffmpeg_bin = "/usr/bin/ffmpeg";
+    jspec.video_uri = "http://127.0.0.1:9999/tok/fetch?u=v";
+    jspec.audio_uri = "http://127.0.0.1:9999/tok/fetch?u=a";
+    jspec.out_path = "/tmp/out.mp4";
+    jspec.input_format = "hls";
+    jspec.proxied = true;
+    const auto jargs = BuildFfmpegJobArgs(jspec);
+    int wl_count = 0;
+    int retry_count = 0;
+    for (const auto& a : jargs) {
+      if (a == "-protocol_whitelist") wl_count++;
+      if (a == "-seg_max_retry") retry_count++;
+    }
+    g_assert_cmpint(wl_count, ==, 2);
+    g_assert_cmpint(retry_count, ==, 2);
+  }
+
   g_autofree gchar* tmp_dir = g_dir_make_tmp("kajo-cef-dl-XXXXXX", nullptr);
   g_assert_nonnull(tmp_dir);
   g_autofree gchar* existing = g_build_filename(tmp_dir, "clip.mp4", nullptr);
@@ -721,6 +811,54 @@ static void test_media_dl_helpers_and_ffmpeg(void) {
     const gint64 pdeadline = g_get_monotonic_time() + 10000000LL;
     while (!done) {
       if (!g_cond_wait_until(&cond, &mu, pdeadline)) break;
+    }
+    g_mutex_unlock(&mu);
+    g_assert_true(done);
+    g_assert_true(final_view.complete);
+    g_assert_cmpint(final_view.total_bytes, >, 0);
+    if (!final_view.full_path.empty()) g_unlink(final_view.full_path.c_str());
+
+    /* Redirected + extensionless text/plain HLS manifest + non-.ts (.jpg) segment remux */
+    std::string m3u8_jpg = m3u8_str;
+    const size_t tpos = m3u8_jpg.find("tiny0.ts");
+    if (tpos != std::string::npos) {
+      m3u8_jpg.replace(tpos, 8, "seg0.jpg");
+    }
+    done = false;
+    final_view = ChromeDownloadView();
+    ProxiedStreamRequest sreq2;
+    sreq2.video_uri = "https://entry.example/manifest_no_ext";
+    sreq2.kind = "HLS";
+    sreq2.suggested_title = "Redirected Sniffed HLS";
+    sreq2.download_dir = tmp_dir;
+    sreq2.duration_sec = 0.4;
+    const uint32_t pjid2 = mgr.StartProxiedStream(
+        sreq2,
+        [m3u8_jpg, seg_str](const std::string& url, const std::string&,
+                            const std::map<std::string, std::string>&,
+                            const std::atomic<bool>*,
+                            std::function<void(int, const std::map<std::string, std::string>&)> on_headers,
+                            std::function<bool(const char*, size_t)> on_chunk,
+                            std::function<void(bool, const std::string&)> on_done) {
+          if (url == "https://entry.example/manifest_no_ext") {
+            on_headers(200, {{"Content-Type", "text/plain"},
+                             {"X-Kajo-Final-Url", "https://edge.example/v1/stream"}});
+            on_chunk(m3u8_jpg.data(), m3u8_jpg.size());
+            on_done(true, "");
+          } else if (url == "https://edge.example/v1/seg0.jpg") {
+            on_headers(200, {{"Content-Type", "application/octet-stream"}});
+            on_chunk(seg_str.data(), seg_str.size());
+            on_done(true, "");
+          } else {
+            on_headers(404, {});
+            on_done(true, "");
+          }
+        });
+    g_assert_cmpuint(pjid2, >, 0);
+    g_mutex_lock(&mu);
+    const gint64 pdeadline2 = g_get_monotonic_time() + 10000000LL;
+    while (!done) {
+      if (!g_cond_wait_until(&cond, &mu, pdeadline2)) break;
     }
     g_mutex_unlock(&mu);
     g_assert_true(done);
